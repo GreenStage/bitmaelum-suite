@@ -24,6 +24,7 @@ import (
 	"github.com/bitmaelum/bitmaelum-suite/internal/resolver"
 	"github.com/bitmaelum/bitmaelum-suite/internal/subscription"
 	"github.com/bitmaelum/bitmaelum-suite/internal/ticket"
+	"github.com/bitmaelum/bitmaelum-suite/internal/store"
 	"github.com/bitmaelum/bitmaelum-suite/internal/webhook"
 )
 
@@ -61,4 +62,9 @@ func (c *Type) GetTicketRepo() ticket.Repository {
 // GetWebhookRepo will return the current webhook repository
 func (c *Type) GetWebhookRepo() webhook.Repository {
 	return c.Get("webhook").(webhook.Repository)
+}
+
+// GetStoreRepo will return the current store repository
+func (c *Type) GetStoreRepo() store.Repository {
+	return c.Get("store").(store.Repository)
 }
