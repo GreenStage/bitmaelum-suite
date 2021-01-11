@@ -20,13 +20,10 @@
 package container
 
 import (
-	"os"
 	"sync"
 
 	"github.com/bitmaelum/bitmaelum-suite/internal/config"
 	"github.com/bitmaelum/bitmaelum-suite/internal/store"
-
-	"github.com/go-redis/redis/v7"
 )
 
 var (
@@ -36,23 +33,7 @@ var (
 
 func setupStoreRepo() (interface{}, error) {
 	storeOnce.Do(func() {
-		//If redis.host is set on the config file it will use redis instead of bolt
-		if config.Server.Redis.Host != "" {
-			opts := redis.Options{
-				Addr: config.Server.Redis.Host,
-				DB:   config.Server.Redis.Db,
-			}
-
-			storeRepository = store.NewRedisRepository(&opts)
-			return
-		}
-
-		//If redis is not set then it will use BoltDB as default
-		if config.Server.Bolt.DatabasePath == "" {
-			config.Server.Bolt.DatabasePath = os.TempDir()
-		}
-
-		storeRepository = store.NewBoltRepository(config.Server.Bolt.DatabasePath)
+		storeRepository = store.NewBoltRepository(config.Server.Paths.Accounts)
 	})
 
 	return storeRepository, nil

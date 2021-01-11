@@ -25,7 +25,6 @@ import (
 
 	"github.com/bitmaelum/bitmaelum-suite/cmd/bm-server/internal/httputils"
 	"github.com/bitmaelum/bitmaelum-suite/internal"
-
 	"github.com/bitmaelum/bitmaelum-suite/internal/container"
 
 	"github.com/bitmaelum/bitmaelum-suite/pkg/hash"
@@ -38,18 +37,30 @@ var (
 
 // StoreGetRoot will get the root of the store, which is a collection of all other collections and keys
 func StoreGetRoot(w http.ResponseWriter, req *http.Request) {
-	getKey(w, hash.New("/"))
+	haddr, err := hash.NewFromHash(mux.Vars(req)["addr"])
+	if err != nil {
+		httputils.ErrorOut(w, http.StatusNotFound, accountNotFound)
+		return
+	}
+
+	getKey(w, haddr, hash.New("/"))
 }
 
 // StoreGet will retrieve a key or collection
 func StoreGet(w http.ResponseWriter, req *http.Request) {
+	haddr, err := hash.NewFromHash(mux.Vars(req)["addr"])
+	if err != nil {
+		httputils.ErrorOut(w, http.StatusNotFound, accountNotFound)
+		return
+	}
+
 	keyHash, err := hash.NewFromHash(mux.Vars(req)["key"])
 	if err != nil {
 		httputils.ErrorOut(w, http.StatusNotFound, errKeyNotFound.Error())
 		return
 	}
 
-	getKey(w, *keyHash)
+	getKey(w, haddr, *keyHash)
 }
 
 // StoreUpdate will update a key or collection
@@ -58,6 +69,12 @@ func StoreUpdate(w http.ResponseWriter, req *http.Request) {
 
 // StoreDelete will remove a key or collection
 func StoreDelete(w http.ResponseWriter, req *http.Request) {
+	haddr, err := hash.NewFromHash(mux.Vars(req)["addr"])
+	if err != nil {
+		httputils.ErrorOut(w, http.StatusNotFound, accountNotFound)
+		return
+	}
+
 	keyHash, err := hash.NewFromHash(mux.Vars(req)["key"])
 	if err != nil {
 		httputils.ErrorOut(w, http.StatusNotFound, errKeyNotFound.Error())
@@ -66,12 +83,12 @@ func StoreDelete(w http.ResponseWriter, req *http.Request) {
 
 	// Check if key exists in database
 	storesvc := container.Instance.GetStoreRepo()
-	if !storesvc.HasKey(*keyHash) {
+	if !storesvc.HasKey(*haddr, *keyHash) {
 		httputils.ErrorOut(w, http.StatusNotFound, errKeyNotFound.Error())
 		return
 	}
 
-	err = storesvc.RemoveKey(*keyHash)
+	err = storesvc.RemoveKey(*haddr, *keyHash)
 	if err != nil {
 		httputils.ErrorOut(w, http.StatusInternalServerError, errKeyNotFound.Error())
 		return
@@ -80,22 +97,21 @@ func StoreDelete(w http.ResponseWriter, req *http.Request) {
 	_ = httputils.JSONOut(w, http.StatusNoContent, nil)
 }
 
-
-func getKey(w http.ResponseWriter, keyHash hash.Hash) {
+func getKey(w http.ResponseWriter, addrHash hash.Hash, keyHash hash.Hash) {
 	// Check if key exists in database
 	storesvc := container.Instance.GetStoreRepo()
-	if !storesvc.HasKey(keyHash) {
+	if !storesvc.HasKey(addrHash, keyHash) {
 		httputils.ErrorOut(w, http.StatusNotFound, errKeyNotFound.Error())
 		return
 	}
 
 	// Check if the key is root.
-	if (keyHash == hash.New("/")) {
+	if keyHash.String() == hash.New("/").String() {
 		_ = httputils.JSONOut(w, http.StatusOK, jsonOut{
-			"parent": nil,
+			"parent":     nil,
 			"collection": true,
-			"value": "This is the root collection. It cannot be deleted",
-			"timestamp": internal.TimeNow(),
+			"value":      "This is the root collection. It cannot be deleted",
+			"timestamp":  internal.TimeNow(),
 			"entries": []string{
 				hash.New("boxes").String(),
 				hash.New("contacts").String(),
@@ -104,18 +120,18 @@ func getKey(w http.ResponseWriter, keyHash hash.Hash) {
 		})
 	}
 
-	entry, err := storesvc.GetKey(keyHash)
+	entry, err := storesvc.GetKey(addrHash, keyHash)
 	if err != nil {
 		httputils.ErrorOut(w, http.StatusNotFound, errKeyNotFound.Error())
 		return
 	}
 
 	_ = httputils.JSONOut(w, http.StatusOK, jsonOut{
-		"parent": entry.Parent,
-		"collection": entry.IsCollection,
-		"value": entry.Value,
-		"timestamp": entry.Timestamp,
-		"entries": entry.Entries,
-		"subcollections": entry.SubCollections,
+		"parent":          entry.Parent,
+		"collection":      entry.IsCollection,
+		"data":            entry.Data,
+		"timestamp":       entry.Timestamp,
+		"entries":         entry.Entries,
+		"sub_collections": entry.SubCollections,
 	})
 }

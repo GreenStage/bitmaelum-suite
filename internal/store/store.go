@@ -22,7 +22,6 @@ package store
 import (
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/bitmaelum/bitmaelum-suite/pkg/hash"
 )
@@ -32,8 +31,8 @@ type StoreEntryType struct {
 	Key            hash.Hash
 	Parent         hash.Hash
 	IsCollection   bool
-	Value          string
-	Timestamp      time.Time
+	Data           []byte
+	Timestamp      uint64
 	Entries        []hash.Hash
 	SubCollections []hash.Hash
 }
@@ -50,9 +49,12 @@ func (e *StoreEntryType) UnmarshalBinary(data []byte) error {
 
 // Repository is a store repository to fetch and store tickets
 type Repository interface {
-	HasKey(key hash.Hash) bool
-	RemoveKey(key hash.Hash) error
-	GetKey(key hash.Hash) (*StoreEntryType, error)
+	HasKey(account hash.Hash, key hash.Hash) bool
+	RemoveKey(account hash.Hash, key hash.Hash) error
+	GetKey(account hash.Hash, key hash.Hash) (*StoreEntryType, error)
+
+	OpenDb(account hash.Hash) error
+	CloseDb(account hash.Hash) error
 }
 
 func createStoreKey(id string) string {
