@@ -17,44 +17,26 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-package cmd
+package api
 
 import (
 	"fmt"
-	"os"
 
-	"github.com/bitmaelum/bitmaelum-suite/internal/vault"
-	"github.com/olekukonko/tablewriter"
-	"github.com/spf13/cobra"
+	"github.com/bitmaelum/bitmaelum-suite/pkg/hash"
 )
 
-var accountStoreListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "Display store",
-	Run: func(cmd *cobra.Command, args []string) {
-		v := vault.OpenDefaultVault()
 
-		info, err := vault.GetAccount(v, *asAccount)
-		if err != nil {
-			fmt.Println("cannot find account in vault")
-			os.Exit(1)
-		}
+func (api *API) GetStoreKey(addr hash.Hash, key string) ([]byte, error) {
+	keyHash := hash.New(key)
 
-		table := tablewriter.NewWriter(os.Stdout)
-		table.SetHeader([]string{"Key", "Value"})
+	body, statusCode, err := api.Get(fmt.Sprintf("/account/%s/store/%s", addr.String(), keyHash.String()))
+	if err != nil {
+		return nil, err
+	}
 
-		table.Append([]string{"Name", info.Name})
+	if statusCode < 200 || statusCode > 299 {
+		return nil, errNoSuccess
+	}
 
-		if info.Settings != nil {
-			for k, v := range info.Settings {
-				table.Append([]string{k, v})
-			}
-		}
-
-		table.Render()
-	},
-}
-
-func init() {
-	accountStoreCmd.AddCommand(accountStoreListCmd)
+	return body, nil
 }

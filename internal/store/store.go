@@ -21,20 +21,27 @@ package store
 
 import (
 	"encoding/json"
-	"fmt"
 
+	"github.com/bitmaelum/bitmaelum-suite/internal"
 	"github.com/bitmaelum/bitmaelum-suite/pkg/hash"
 )
 
 // StoreEntryType is the structure that defines a key entry
 type StoreEntryType struct {
-	Key            hash.Hash
-	Parent         hash.Hash
-	IsCollection   bool
-	Data           []byte
-	Timestamp      uint64
-	Entries        []hash.Hash
-	SubCollections []hash.Hash
+	Key            hash.Hash            // Key of the entry
+	Parent         *hash.Hash           // key of the parent, or nil when it's the root
+	Data           []byte               // actual (encrypted) data
+	Timestamp      int64                // Timestamp of this entry, or the highest timestamp of any entry below
+	Entries        []hash.Hash          // Keys to entries below this
+	SubCollections []hash.Hash          // TBD
+}
+
+// NewEntry creates a new entry
+func NewEntry(data []byte) StoreEntryType {
+	return StoreEntryType{
+		Data:           data,
+		Timestamp:      internal.TimeNow().Unix(),
+	}
 }
 
 // MarshalBinary converts a storeentrytype to binary format so it can be stored in Redis
@@ -49,14 +56,12 @@ func (e *StoreEntryType) UnmarshalBinary(data []byte) error {
 
 // Repository is a store repository to fetch and store tickets
 type Repository interface {
-	HasKey(account hash.Hash, key hash.Hash) bool
-	RemoveKey(account hash.Hash, key hash.Hash) error
-	GetKey(account hash.Hash, key hash.Hash) (*StoreEntryType, error)
+	HasEntry(account hash.Hash, key string) bool
+	RemoveEntry(account hash.Hash, key string) error
+	GetEntry(account hash.Hash, key string) (*StoreEntryType, error)
+	SetEntry(account hash.Hash, key string, entry StoreEntryType) error
 
 	OpenDb(account hash.Hash) error
 	CloseDb(account hash.Hash) error
 }
 
-func createStoreKey(id string) string {
-	return fmt.Sprintf("store-%s", id)
-}

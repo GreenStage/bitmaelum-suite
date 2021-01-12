@@ -43,7 +43,7 @@ func StoreGetRoot(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	getKey(w, haddr, hash.New("/"))
+	getKey(w, *haddr, hash.New("/"))
 }
 
 // StoreGet will retrieve a key or collection
@@ -60,7 +60,7 @@ func StoreGet(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	getKey(w, haddr, *keyHash)
+	getKey(w, *haddr, *keyHash)
 }
 
 // StoreUpdate will update a key or collection
@@ -81,14 +81,25 @@ func StoreDelete(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	deleteKey(w, *haddr, *keyHash)
+}
+
+
+func deleteKey(w http.ResponseWriter, addrHash hash.Hash, keyHash hash.Hash) {
+	err := openDb(w, addrHash)
+	if err != nil {
+		return
+	}
+	defer closeDb(addrHash)
+
 	// Check if key exists in database
 	storesvc := container.Instance.GetStoreRepo()
-	if !storesvc.HasKey(*haddr, *keyHash) {
+	if !storesvc.HasEntry(addrHash, keyHash) {
 		httputils.ErrorOut(w, http.StatusNotFound, errKeyNotFound.Error())
 		return
 	}
 
-	err = storesvc.RemoveKey(*haddr, *keyHash)
+	err = storesvc.RemoveEntry(addrHash, keyHash)
 	if err != nil {
 		httputils.ErrorOut(w, http.StatusInternalServerError, errKeyNotFound.Error())
 		return
@@ -98,9 +109,15 @@ func StoreDelete(w http.ResponseWriter, req *http.Request) {
 }
 
 func getKey(w http.ResponseWriter, addrHash hash.Hash, keyHash hash.Hash) {
+	err := openDb(w, addrHash)
+	if err != nil {
+		return
+	}
+	defer closeDb(addrHash)
+
 	// Check if key exists in database
 	storesvc := container.Instance.GetStoreRepo()
-	if !storesvc.HasKey(addrHash, keyHash) {
+	if !storesvc.HasEntry(addrHash, keyHash) {
 		httputils.ErrorOut(w, http.StatusNotFound, errKeyNotFound.Error())
 		return
 	}
@@ -120,7 +137,7 @@ func getKey(w http.ResponseWriter, addrHash hash.Hash, keyHash hash.Hash) {
 		})
 	}
 
-	entry, err := storesvc.GetKey(addrHash, keyHash)
+	entry, err := storesvc.GetEntry(addrHash, keyHash)
 	if err != nil {
 		httputils.ErrorOut(w, http.StatusNotFound, errKeyNotFound.Error())
 		return
@@ -134,4 +151,20 @@ func getKey(w http.ResponseWriter, addrHash hash.Hash, keyHash hash.Hash) {
 		"entries":         entry.Entries,
 		"sub_collections": entry.SubCollections,
 	})
+}
+
+func openDb(w http.ResponseWriter, addrHash hash.Hash) error {
+	// Open DB
+	storesvc := container.Instance.GetStoreRepo()
+	if err := storesvc.OpenDb(addrHash); err != nil {
+		httputils.ErrorOut(w, http.StatusNotFound, errKeyNotFound.Error())
+		return errors.New("cannot open db")
+	}
+
+	return nil
+}
+
+func closeDb(addrhash hash.Hash) {
+	storesvc := container.Instance.GetStoreRepo()
+	_ = storesvc.CloseDb(addrhash)
 }

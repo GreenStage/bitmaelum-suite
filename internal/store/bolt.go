@@ -23,12 +23,18 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"strings"
 
+	"github.com/bitmaelum/bitmaelum-suite/internal"
 	"github.com/bitmaelum/bitmaelum-suite/pkg/hash"
+	"github.com/sirupsen/logrus"
 	bolt "go.etcd.io/bbolt"
 )
 
-var errKeyNotFound = errors.New("store: key not found")
+var (
+	errKeyNotFound = errors.New("store: key not found")
+	errNoEmptyParent = errors.New("store: no empty parent allowed")
+)
 
 type boltRepo struct {
 	Clients map[string]*bolt.DB
@@ -43,13 +49,6 @@ const BoltDBFile = "store.db"
 
 // NewBoltRepository initializes a new repository
 func NewBoltRepository(accountsPath string) Repository {
-	// dbFile := filepath.Join(dbpath, BoltDBFile)
-	// db, err := bolt.Open(dbFile, 0600, nil)
-	// if err != nil {
-	// 	logrus.Error("Unable to open filepath ", dbFile, err)
-	// 	return nil
-	// }
-
 	return &boltRepo{
 	 	Clients: make(map[string]*bolt.DB),
 	 	path: accountsPath,
@@ -58,7 +57,31 @@ func NewBoltRepository(accountsPath string) Repository {
 
 // OpenDB will try and open the store database
 func (b boltRepo) OpenDb(account hash.Hash) error {
-	// Does nothing. Database will be opened when fetching a client
+	// Open file
+	p := filepath.Join(b.path, BoltDBFile)
+	logrus.Trace("opening boltdb file: ", p)
+
+	db, err := bolt.Open(p, 0600, nil)
+	if err != nil {
+		logrus.Trace("error while opening boltdb: ", err)
+		return err
+	}
+
+	// Store in cache
+	b.Clients[account.String()] = db
+
+
+	// Check if root exists
+	if !b.HasEntry(account, "/") {
+		entry := &StoreEntryType{
+			Timestamp:      internal.TimeNow().Unix(),
+		}
+		err := b.SetEntry(account, "/", *entry)
+		if  err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -74,8 +97,8 @@ func (b boltRepo) CloseDb(account hash.Hash) error {
 	return db.Close()
 }
 
-// HasKey will return true when the database has the specific key present
-func (b boltRepo) HasKey(account hash.Hash, key hash.Hash) bool {
+// HasEntry will return true when the database has the specific key present
+func (b boltRepo) HasEntry(account hash.Hash, key string) bool {
 	client, err := b.getClientDb(account)
 	if err != nil {
 		return false
@@ -87,7 +110,8 @@ func (b boltRepo) HasKey(account hash.Hash, key hash.Hash) bool {
 			return errKeyNotFound
 		}
 
-		data := bucket.Get([]byte(key.String()))
+		keyHash := hash.New(account.String() + key)
+		data := bucket.Get(keyHash.Byte())
 		if data == nil {
 			return errKeyNotFound
 		}
@@ -98,8 +122,8 @@ func (b boltRepo) HasKey(account hash.Hash, key hash.Hash) bool {
 	return err == nil
 }
 
-// GetKey will return the given entry
-func (b boltRepo) GetKey(account hash.Hash, key hash.Hash) (*StoreEntryType, error) {
+// GetEntry will return the given entry
+func (b boltRepo) GetEntry(account hash.Hash, key string) (*StoreEntryType, error) {
 	client, err := b.getClientDb(account)
 	if err != nil {
 		return nil, err
@@ -113,7 +137,8 @@ func (b boltRepo) GetKey(account hash.Hash, key hash.Hash) (*StoreEntryType, err
 			return errKeyNotFound
 		}
 
-		data := bucket.Get([]byte(key.String()))
+		keyHash := hash.New(account.String() + key)
+		data := bucket.Get(keyHash.Byte())
 		if data == nil {
 			return errKeyNotFound
 		}
@@ -133,8 +158,66 @@ func (b boltRepo) GetKey(account hash.Hash, key hash.Hash) (*StoreEntryType, err
 	return entry, nil
 }
 
-// RemoveKey will remove the key from the database, and update the collection tree
-func (b boltRepo) RemoveKey(account hash.Hash, key hash.Hash) error {
+
+func (b boltRepo) SetEntry(account hash.Hash, key string, entry StoreEntryType) error {
+	client, err := b.getClientDb(account)
+	if err != nil {
+		return err
+	}
+
+	if key != "/" && entry.Parent == nil {
+		return errNoEmptyParent
+	}
+
+	lastUpdateTimestamp := internal.TimeNow().Unix()
+
+	// Populate key and parent hash
+	keyHash := hash.New(account.String() + key)
+	entry.Key = keyHash
+	entry.Parent = getParentKeyHash(account, key)
+
+
+	return client.Update(func(tx *bolt.Tx) error {
+		bucket, err := tx.CreateBucketIfNotExists([]byte(BucketName))
+		if err != nil {
+			logrus.Trace("unable to create bucket on BOLT: ", BucketName, err)
+			return err
+		}
+
+		for {
+			// Update this item's timestamp
+			entry.Timestamp = lastUpdateTimestamp
+
+			buf, err := json.Marshal(entry)
+			if err != nil {
+				return err
+			}
+
+			err = bucket.Put(entry.Key.Byte(), buf)
+			if err != nil {
+				return err
+			}
+
+			// All done when no parent is found
+			if entry.Parent == nil {
+				logrus.Trace("root was found. Breaking")
+				break
+			}
+
+			// Get parent entry
+			data := bucket.Get(entry.Parent.Byte())
+			err = json.Unmarshal(data, &entry)
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
+// RemoveEntry will remove the key from the database, and update the collection tree
+func (b boltRepo) RemoveEntry(account hash.Hash, key string) error {
 	panic("implement me")
 }
 
@@ -147,14 +230,28 @@ func (b boltRepo) getClientDb(account hash.Hash) (*bolt.DB, error) {
 		return db, nil
 	}
 
-	// Open file
-	p := filepath.Join(b.path, BoltDBFile)
-	db, err := bolt.Open(p, 0600, nil)
+	// Open/create if not found in cache
+	err := b.OpenDb(account)
 	if err != nil {
 		return nil, err
 	}
 
-	// Store in cache
-	b.Clients[account.String()] = db
-	return db, nil
+	return b.Clients[account.String()], nil
+}
+
+func getParentKeyHash(addr hash.Hash, key string) *hash.Hash {
+	// Assume always absolute from root. Remove the root if present
+	if key[0] == '/' {
+		key = key[1:]
+	}
+
+	if key == "" {
+		return nil
+	}
+
+	parts := strings.Split(key, "/")
+	parentKey := strings.Join(parts[:len(parts)-1], "/")
+
+	h := hash.New(addr.String() + "/" + parentKey)
+	return &h
 }
