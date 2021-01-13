@@ -21,29 +21,36 @@ package store
 
 import (
 	"testing"
+	"time"
+
+	"github.com/bitmaelum/bitmaelum-suite/internal"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestNewEntry(t *testing.T) {
-	// acc1 := hash.New("foo!")
-	// acc2 := hash.New("bar!")
-	//
-	// e := NewEntry(acc1, []byte("foobar"), "/")
-	// assert.Equal(t, "94723340d93b27ca21384fa64db760e10ee2382a3ded94f1e4243bacc24825e6", e.Key.String())
-	// assert.Nil(t, e.Parent)
-	//
-	// e = NewEntry(acc2, []byte("foobar"), "/")
-	// assert.Equal(t, "1f1cce7df0c9a930ba4618be5025c2f25eb93ca3574ccc9b8197ba323399ddb1", e.Key.String())
-	// assert.Nil(t, e.Parent)
-	//
-	// e = NewEntry(acc1, []byte("foobar"), "/foo")
-	// assert.Equal(t, "f2f5d73819bf7302d137500293b85e5e13e8c2069e3f3ad85fa4ad8ea7ed1efe", e.Key.String())
-	// assert.Equal(t, "94723340d93b27ca21384fa64db760e10ee2382a3ded94f1e4243bacc24825e6", e.Parent.String())
-	//
-	// e = NewEntry(acc1, []byte("foobar"), "/foo/bar")
-	// assert.Equal(t, "79780c884b68f0bb259371679413fc3607c3c4bc9eef2d675ab5266e09f04bce", e.Key.String())
-	// assert.Equal(t, "f2f5d73819bf7302d137500293b85e5e13e8c2069e3f3ad85fa4ad8ea7ed1efe", e.Parent.String())
-	//
-	// e = NewEntry(acc1, []byte("foobar"), "/foo/bar/qux")
-	// assert.Equal(t, "86eee6e98f7d4488325ee8cd22c4295bf2ba21927e07b1d5671b70c3cdfb6747", e.Key.String())
-	// assert.Equal(t, "79780c884b68f0bb259371679413fc3607c3c4bc9eef2d675ab5266e09f04bce", e.Parent.String())
+	internal.SetMockTime(func() time.Time {
+		return time.Date(2010, 01, 01, 12, 34, 56, 0, time.UTC)
+	})
+
+	e := NewEntry([]byte("foobar"))
+	assert.Equal(t, []byte("foobar"), e.Data)
+	assert.Equal(t, int64(1262349296), e.Timestamp)
+}
+
+func TestMarshalling(t *testing.T) {
+	internal.SetMockTime(func() time.Time {
+		return time.Date(2010, 01, 01, 12, 34, 56, 0, time.UTC)
+	})
+
+	e := NewEntry([]byte("foobar"))
+	b, err := e.MarshalBinary()
+	assert.NoError(t, err)
+	assert.Equal(t, "{\"Key\":\"\",\"Parent\":null,\"Data\":\"Zm9vYmFy\",\"Timestamp\":1262349296,\"Entries\":null,\"SubCollections\":null}", string(b))
+
+	e2 := &StoreEntryType{}
+	err = e2.UnmarshalBinary(b)
+	assert.NoError(t, err)
+	assert.Equal(t, []byte("foobar"), e2.Data)
+	assert.Equal(t, int64(1262349296), e2.Timestamp)
+
 }

@@ -28,9 +28,41 @@ import (
 	"time"
 
 	"github.com/bitmaelum/bitmaelum-suite/pkg/hash"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/stretchr/testify/assert"
 )
+
+func TestParentHashes(t *testing.T) {
+	acc1 := hash.New("foo!")
+
+	parents := getParentHashes(acc1, "/foo/bar/baz")
+	assert.Len(t, parents, 3)
+	assert.Equal(t, "/foo/bar", parents[0].Key)
+	assert.Equal(t, "79780c884b68f0bb259371679413fc3607c3c4bc9eef2d675ab5266e09f04bce", parents[0].Hash.String())
+	assert.Equal(t, "/foo", parents[1].Key)
+	assert.Equal(t, "f2f5d73819bf7302d137500293b85e5e13e8c2069e3f3ad85fa4ad8ea7ed1efe", parents[1].Hash.String())
+	assert.Equal(t, "/", parents[2].Key)
+	assert.Equal(t, "94723340d93b27ca21384fa64db760e10ee2382a3ded94f1e4243bacc24825e6", parents[2].Hash.String())
+
+	parents = getParentHashes(acc1, "")
+	assert.Len(t, parents, 0)
+	assert.Nil(t, parents)
+
+	parents = getParentHashes(acc1, "/")
+	assert.Len(t, parents, 0)
+	assert.Nil(t, parents)
+
+	parents = getParentHashes(acc1, "/foo/bar")
+	assert.Len(t, parents, 2)
+	assert.Equal(t, "/foo", parents[0].Key)
+	assert.Equal(t, "f2f5d73819bf7302d137500293b85e5e13e8c2069e3f3ad85fa4ad8ea7ed1efe", parents[0].Hash.String())
+	assert.Equal(t, "/", parents[1].Key)
+	assert.Equal(t, "94723340d93b27ca21384fa64db760e10ee2382a3ded94f1e4243bacc24825e6", parents[1].Hash.String())
+
+	parents = getParentHashes(acc1, "/foo")
+	assert.Len(t, parents, 1)
+	assert.Equal(t, "/", parents[0].Key)
+	assert.Equal(t, "94723340d93b27ca21384fa64db760e10ee2382a3ded94f1e4243bacc24825e6", parents[0].Hash.String())
+}
 
 func TestBoltStorage(t *testing.T) {
 	var (
@@ -87,14 +119,6 @@ func TestBoltStorage(t *testing.T) {
 	assert.Equal(t, []byte("foobar"), entry.Data)
 
 
-	// Implicitly set root
-	entry2 = NewEntry([]byte("foobar"))
-	err = b.SetEntry(acc1, "something", entry2)
-	assert.NoError(t, err)
-	ok = b.HasEntry(acc1, "/something")
-	assert.True(t, ok)
-
-
 	// Create path
 	entry2 = NewEntry([]byte("foobar"))
 	err = b.SetEntry(acc1, "/foo", entry2)
@@ -113,5 +137,17 @@ func TestBoltStorage(t *testing.T) {
 	entry, err = b.GetEntry(acc1, "/foo/bar/baz/baq")
 	assert.NoError(t, err)
 	assert.NotNil(t, entry)
-	spew.Dump(entry)
+
+
+
+	entry2 = NewEntry([]byte("foobar"))
+	err = b.SetEntry(acc1, "/this/path/must/be/set", entry2)
+	assert.NoError(t, err)
+
+	ok = b.HasEntry(acc1, "/this/path")
+	assert.True(t, ok)
+
+	ok = b.HasEntry(acc1, "/this/path/does/not/exists")
+	assert.False(t, ok)
 }
+

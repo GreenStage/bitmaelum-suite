@@ -32,7 +32,7 @@ import (
 )
 
 var (
-	errKeyNotFound = errors.New("store: key not found")
+	errKeyNotFound   = errors.New("store: key not found")
 	errNoEmptyParent = errors.New("store: no empty parent allowed")
 )
 
@@ -41,17 +41,17 @@ type boltRepo struct {
 	path    string
 }
 
-//BucketName is the bucket name to store the tickets on the bolt db
+// BucketName is the bucket name to save the sote
 const BucketName = "store"
 
-//BoltDBFile is the filename to store the boltdb database
+// BoltDBFile is the filename to store the boltdb database
 const BoltDBFile = "store.db"
 
 // NewBoltRepository initializes a new repository
 func NewBoltRepository(accountsPath string) Repository {
 	return &boltRepo{
-	 	Clients: make(map[string]*bolt.DB),
-	 	path: accountsPath,
+		Clients: make(map[string]*bolt.DB),
+		path:    accountsPath,
 	}
 }
 
@@ -70,14 +70,13 @@ func (b boltRepo) OpenDb(account hash.Hash) error {
 	// Store in cache
 	b.Clients[account.String()] = db
 
-
 	// Check if root exists
 	if !b.HasEntry(account, "/") {
 		entry := &StoreEntryType{
-			Timestamp:      internal.TimeNow().Unix(),
+			Timestamp: internal.TimeNow().Unix(),
 		}
 		err := b.SetEntry(account, "/", *entry)
-		if  err != nil {
+		if err != nil {
 			return err
 		}
 	}
@@ -158,24 +157,23 @@ func (b boltRepo) GetEntry(account hash.Hash, key string) (*StoreEntryType, erro
 	return entry, nil
 }
 
-
 func (b boltRepo) SetEntry(account hash.Hash, key string, entry StoreEntryType) error {
 	client, err := b.getClientDb(account)
 	if err != nil {
 		return err
 	}
 
-	if key != "/" && entry.Parent == nil {
-		return errNoEmptyParent
-	}
-
+	// Update entry and tree back to root with this timestamp
 	lastUpdateTimestamp := internal.TimeNow().Unix()
 
-	// Populate key and parent hash
+	parents := getParentHashes(account, key)
+
+	// Populate key and parent hash in our store entry
 	keyHash := hash.New(account.String() + key)
 	entry.Key = keyHash
-	entry.Parent = getParentKeyHash(account, key)
-
+	if len(parents) > 0 {
+		entry.Parent = &parents[len(parents)-1].Hash
+	}
 
 	return client.Update(func(tx *bolt.Tx) error {
 		bucket, err := tx.CreateBucketIfNotExists([]byte(BucketName))
@@ -184,8 +182,37 @@ func (b boltRepo) SetEntry(account hash.Hash, key string, entry StoreEntryType) 
 			return err
 		}
 
-		for {
-			// Update this item's timestamp
+		// Store entry
+		buf, err := json.Marshal(entry)
+		if err != nil {
+			return err
+		}
+
+		err = bucket.Put(entry.Key.Byte(), buf)
+		if err != nil {
+			return err
+		}
+
+		// Iterate parents back to root and update
+		for _, parent := range parents {
+			// Get parent entry
+			data := bucket.Get(parent.Hash.Byte())
+			if data == nil {
+				// Parent not found. Add a new one
+				nextEntry := &StoreEntryType{
+					Key:       parent.Hash,
+					Timestamp: 0,
+					Entries:   []hash.Hash{entry.Key},
+				}
+				entry = *nextEntry
+			} else {
+				err = json.Unmarshal(data, &entry)
+				if err != nil {
+					return err
+				}
+			}
+
+			// Store current entry
 			entry.Timestamp = lastUpdateTimestamp
 
 			buf, err := json.Marshal(entry)
@@ -194,19 +221,6 @@ func (b boltRepo) SetEntry(account hash.Hash, key string, entry StoreEntryType) 
 			}
 
 			err = bucket.Put(entry.Key.Byte(), buf)
-			if err != nil {
-				return err
-			}
-
-			// All done when no parent is found
-			if entry.Parent == nil {
-				logrus.Trace("root was found. Breaking")
-				break
-			}
-
-			// Get parent entry
-			data := bucket.Get(entry.Parent.Byte())
-			err = json.Unmarshal(data, &entry)
 			if err != nil {
 				return err
 			}
@@ -220,7 +234,6 @@ func (b boltRepo) SetEntry(account hash.Hash, key string, entry StoreEntryType) 
 func (b boltRepo) RemoveEntry(account hash.Hash, key string) error {
 	panic("implement me")
 }
-
 
 // getClientDB will open or create the account's store database
 func (b boltRepo) getClientDb(account hash.Hash) (*bolt.DB, error) {
@@ -239,19 +252,35 @@ func (b boltRepo) getClientDb(account hash.Hash) (*bolt.DB, error) {
 	return b.Clients[account.String()], nil
 }
 
-func getParentKeyHash(addr hash.Hash, key string) *hash.Hash {
+type ParentMapType struct {
+	Key  string
+	Hash hash.Hash
+}
+
+func getParentHashes(addr hash.Hash, key string) []ParentMapType {
 	// Assume always absolute from root. Remove the root if present
-	if key[0] == '/' {
+	if len(key) > 0 && key[0] == '/' {
 		key = key[1:]
 	}
 
+	// Root key, does not have a parent
 	if key == "" {
 		return nil
 	}
 
-	parts := strings.Split(key, "/")
-	parentKey := strings.Join(parts[:len(parts)-1], "/")
+	var parents []ParentMapType
 
-	h := hash.New(addr.String() + "/" + parentKey)
-	return &h
+	parts := strings.Split(key, "/")
+	for len(parts) > 0 {
+		parts = parts[:len(parts)-1]
+
+		parentKey := strings.Join(parts, "/")
+
+		parents = append(parents, ParentMapType{
+			Key:  "/" + parentKey,
+			Hash: hash.New(addr.String() + "/" + parentKey),
+		})
+	}
+
+	return parents
 }
