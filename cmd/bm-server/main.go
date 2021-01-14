@@ -252,7 +252,6 @@ func setupRouter() *mux.Router {
 	authRouter.HandleFunc("/account/{addr:[A-Za-z0-9]{64}}/store/{key:[A-Za-z0-9]{64}}", handler.StoreUpdate).Methods("POST")
 	authRouter.HandleFunc("/account/{addr:[A-Za-z0-9]{64}}/store/{key:[A-Za-z0-9]{64}}", handler.StoreDelete).Methods("DELETE")
 
-
 	//
 	// Routes that need to be authenticated through JWT or API keys
 	//

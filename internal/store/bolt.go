@@ -32,8 +32,8 @@ import (
 )
 
 var (
-	errKeyNotFound   = errors.New("store: key not found")
-	errParentNotFound = errors.New("store: parent entry not found")
+	errKeyNotFound            = errors.New("store: key not found")
+	errParentNotFound         = errors.New("store: parent entry not found")
 	errCannotRemoveCollection = errors.New("store: cannot remove collection")
 )
 
@@ -77,7 +77,7 @@ func (b boltRepo) OpenDb(account hash.Hash) error {
 
 	// Check if root exists
 	if !b.HasEntry(account, rootHash) {
-		entry := &StoreEntryType{
+		entry := &EntryType{
 			Timestamp: internal.TimeNow().Unix(),
 		}
 
@@ -101,7 +101,6 @@ func (b boltRepo) CloseDb(account hash.Hash) error {
 	delete(b.Clients, account.String())
 	return db.Close()
 }
-
 
 // HasEntry will return true when the database has the specific key present
 func (b boltRepo) HasEntry(account, key hash.Hash) bool {
@@ -128,13 +127,13 @@ func (b boltRepo) HasEntry(account, key hash.Hash) bool {
 }
 
 // GetEntry will return the given entry
-func (b boltRepo) GetEntry(account, key hash.Hash) (*StoreEntryType, error) {
+func (b boltRepo) GetEntry(account, key hash.Hash) (*EntryType, error) {
 	client, err := b.getClientDb(account)
 	if err != nil {
 		return nil, err
 	}
 
-	entry := &StoreEntryType{}
+	entry := &EntryType{}
 
 	err = client.View(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket([]byte(BucketName))
@@ -157,7 +156,7 @@ func (b boltRepo) GetEntry(account, key hash.Hash) (*StoreEntryType, error) {
 	return entry, nil
 }
 
-func (b boltRepo) SetEntry(account, key hash.Hash, parent *hash.Hash, entry StoreEntryType) error {
+func (b boltRepo) SetEntry(account, key hash.Hash, parent *hash.Hash, entry EntryType) error {
 	client, err := b.getClientDb(account)
 	if err != nil {
 		return err
@@ -205,13 +204,13 @@ func (b boltRepo) SetEntry(account, key hash.Hash, parent *hash.Hash, entry Stor
 	})
 }
 
-func getFromBucket(bucket *bolt.Bucket, key hash.Hash) *StoreEntryType {
+func getFromBucket(bucket *bolt.Bucket, key hash.Hash) *EntryType {
 	data := bucket.Get(key.Byte())
 	if data == nil {
 		return nil
 	}
 
-	entry := &StoreEntryType{}
+	entry := &EntryType{}
 	err := json.Unmarshal(data, &entry)
 	if err != nil {
 		return nil
@@ -220,7 +219,7 @@ func getFromBucket(bucket *bolt.Bucket, key hash.Hash) *StoreEntryType {
 	return entry
 }
 
-func putInBucket(bucket *bolt.Bucket, entry StoreEntryType) error {
+func putInBucket(bucket *bolt.Bucket, entry EntryType) error {
 	buf, err := json.Marshal(entry)
 	if err != nil {
 		return err
@@ -292,7 +291,6 @@ func (b boltRepo) getClientDb(account hash.Hash) (*bolt.DB, error) {
 	return b.Clients[account.String()], nil
 }
 
-
 // addToEntries will add the key, but only when it's not yet present in the list
 func addToEntries(entries []hash.Hash, key hash.Hash) []hash.Hash {
 	for i := range entries {
@@ -321,7 +319,7 @@ func removeFromEntries(entries []hash.Hash, key hash.Hash) []hash.Hash {
 	return append(entries[:found], entries[found+1:]...)
 }
 
-func updateParentEntries(bucket *bolt.Bucket, initialEntry StoreEntryType, ts int64) error {
+func updateParentEntries(bucket *bolt.Bucket, initialEntry EntryType, ts int64) error {
 	entry := &initialEntry
 
 	for entry.Parent != nil {

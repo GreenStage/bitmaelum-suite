@@ -45,9 +45,9 @@ func TestMarshalling(t *testing.T) {
 	e := NewEntry([]byte("foobar"))
 	b, err := e.MarshalBinary()
 	assert.NoError(t, err)
-	assert.Equal(t, "{\"Key\":\"\",\"Parent\":null,\"Data\":\"Zm9vYmFy\",\"Timestamp\":1262349296,\"Entries\":null,\"SubCollections\":null}", string(b))
+	assert.Equal(t, "{\"key\":\"\",\"parent\":null,\"data\":\"Zm9vYmFy\",\"timestamp\":1262349296,\"entries\":null,\"SubCollections\":null}", string(b))
 
-	e2 := &StoreEntryType{}
+	e2 := &EntryType{}
 	err = e2.UnmarshalBinary(b)
 	assert.NoError(t, err)
 	assert.Equal(t, []byte("foobar"), e2.Data)

@@ -29,7 +29,8 @@ import (
 	"github.com/bitmaelum/bitmaelum-suite/pkg/hash"
 )
 
-func (api *API) StoreGetKey(addr hash.Hash, key string) (*store.StoreEntryType, error) {
+// StoreGetKey will fetch an entry
+func (api *API) StoreGetKey(addr hash.Hash, key string) (*store.EntryType, error) {
 	keyHash := hash.New(addr.String() + key)
 
 	body, statusCode, err := api.Get(fmt.Sprintf("/account/%s/store/%s", addr.String(), keyHash.String()))
@@ -41,7 +42,7 @@ func (api *API) StoreGetKey(addr hash.Hash, key string) (*store.StoreEntryType, 
 		return nil, errNoSuccess
 	}
 
-	entry := &store.StoreEntryType{}
+	entry := &store.EntryType{}
 	err = json.Unmarshal(body, &entry)
 	if err != nil {
 		return nil, err
@@ -50,6 +51,7 @@ func (api *API) StoreGetKey(addr hash.Hash, key string) (*store.StoreEntryType, 
 	return entry, nil
 }
 
+// StorePutValue will store an value to a key
 func (api *API) StorePutValue(addr hash.Hash, key string, value string) error {
 	// Calc parentKey
 	parentKey, _ := filepath.Split(key)

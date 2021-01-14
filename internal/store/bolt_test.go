@@ -34,7 +34,7 @@ import (
 
 func TestBoltStorage(t *testing.T) {
 	var (
-		ok bool
+		ok  bool
 		err error
 	)
 
@@ -43,14 +43,13 @@ func TestBoltStorage(t *testing.T) {
 	acc1 := hash.New("foo!")
 	acc2 := hash.New("bar!")
 
-
 	internal.SetMockTime(func() time.Time {
 		return time.Date(2010, 01, 01, 12, 34, 56, 0, time.UTC)
 	})
 
 	// Unfortunately, boltdb cannot be used with afero
 	path := filepath.Join(os.TempDir(), fmt.Sprintf("store-%d", rand.Int31()))
-	_ = os.MkdirAll(path, 0755)
+	_ = os.MkdirAll(filepath.Join(path, acc1.String()[:2], acc1.String()[2:]), 0755)
 
 	defer func() {
 		_ = os.RemoveAll(path)
@@ -88,14 +87,12 @@ func TestBoltStorage(t *testing.T) {
 	ok = b.HasEntry(acc1, makeHash(acc1, "/contacts"))
 	assert.True(t, ok)
 
-
 	entry, err = b.GetEntry(acc1, makeHash(acc1, "/contacts"))
 	assert.NoError(t, err)
 	assert.NotNil(t, entry)
 	assert.Equal(t, "9f198242afd0a2660077b05c90c4aad8807b381f8e1af89e556c9a0e0e66331d", entry.Key.String())
 	assert.Equal(t, "94723340d93b27ca21384fa64db760e10ee2382a3ded94f1e4243bacc24825e6", entry.Parent.String())
 	assert.Equal(t, []byte("foobar"), entry.Data)
-
 
 	// Create entry without correct path
 	entry2 = NewEntry([]byte("foobar"))
@@ -119,7 +116,7 @@ func TestTimePropagation(t *testing.T) {
 
 	// Unfortunately, boltdb cannot be used with afero
 	path := filepath.Join(os.TempDir(), fmt.Sprintf("store-%d", rand.Int31()))
-	_ = os.MkdirAll(path, 0755)
+	_ = os.MkdirAll(filepath.Join(path, acc1.String()[:2], acc1.String()[2:]), 0755)
 
 	defer func() {
 		_ = os.RemoveAll(path)
@@ -172,7 +169,6 @@ func TestTimePropagation(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1262349296), entry2.Timestamp)
 
-
 	// New entry
 
 	internal.SetMockTime(func() time.Time {
@@ -183,7 +179,6 @@ func TestTimePropagation(t *testing.T) {
 	p = makeHash(acc1, "/contacts")
 	err = b.SetEntry(acc1, makeHash(acc1, "/contacts/7"), &p, entry)
 	assert.NoError(t, err)
-
 
 	entry2, err = b.GetEntry(acc1, makeHash(acc1, "/contacts"))
 	assert.NoError(t, err)
@@ -209,7 +204,6 @@ func TestTimePropagation(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1273062896), entry2.Timestamp)
 
-
 	// Update entry
 
 	internal.SetMockTime(func() time.Time {
@@ -220,7 +214,6 @@ func TestTimePropagation(t *testing.T) {
 	p = makeHash(acc1, "/contacts")
 	err = b.SetEntry(acc1, makeHash(acc1, "/contacts/2"), &p, entry)
 	assert.NoError(t, err)
-
 
 	entry2, err = b.GetEntry(acc1, makeHash(acc1, "/contacts"))
 	assert.NoError(t, err)
@@ -247,7 +240,6 @@ func TestTimePropagation(t *testing.T) {
 	assert.Equal(t, int64(1281270896), entry2.Timestamp)
 }
 
-
 func TestRemoveEntries(t *testing.T) {
 	var (
 		err error
@@ -263,7 +255,7 @@ func TestRemoveEntries(t *testing.T) {
 
 	// Unfortunately, boltdb cannot be used with afero
 	path := filepath.Join(os.TempDir(), fmt.Sprintf("store-%d", rand.Int31()))
-	_ = os.MkdirAll(path, 0755)
+	_ = os.MkdirAll(filepath.Join(path, acc1.String()[:2], acc1.String()[2:]), 0755)
 
 	defer func() {
 		_ = os.RemoveAll(path)
@@ -300,7 +292,6 @@ func TestRemoveEntries(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Len(t, entry2.Entries, 3)
 
-
 	// Remove entry
 
 	internal.SetMockTime(func() time.Time {
@@ -313,11 +304,9 @@ func TestRemoveEntries(t *testing.T) {
 	err = b.RemoveEntry(acc1, makeHash(acc1, "/"), true)
 	assert.Error(t, err)
 
-
 	// Remove second entry
 	err = b.RemoveEntry(acc1, makeHash(acc1, "/contacts/2"), true)
 	assert.NoError(t, err)
-
 
 	entry2, err = b.GetEntry(acc1, makeHash(acc1, "/contacts"))
 	assert.NoError(t, err)

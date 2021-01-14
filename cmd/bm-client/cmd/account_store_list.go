@@ -56,20 +56,12 @@ var accountStoreListCmd = &cobra.Command{
 			os.Exit(1)
 		}
 		entry, err := client.StoreGetKey(info.Address.Hash(), "/")
-		spew.Dump(entry)
+		if err != nil {
+			fmt.Println("cannot find store key")
+			os.Exit(1)
+		}
 
-		// table := tablewriter.NewWriter(os.Stdout)
-		// table.SetHeader([]string{"Key", "Value"})
-		//
-		// table.Append([]string{"Name", info.Name})
-		//
-		// if info.Settings != nil {
-		// 	for k, v := range info.Settings {
-		// 		table.Append([]string{k, v})
-		// 	}
-		// }
-		//
-		// table.Render()
+		spew.Dump(entry)
 	},
 }
 

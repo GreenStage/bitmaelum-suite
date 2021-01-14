@@ -44,7 +44,7 @@ func StoreGetRoot(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	getKey(w, *haddr, hash.New(haddr.String() + "/"))
+	getKey(w, *haddr, hash.New(haddr.String()+"/"))
 }
 
 // StoreGet will retrieve a key or collection
@@ -64,20 +64,18 @@ func StoreGet(w http.ResponseWriter, req *http.Request) {
 	getKey(w, *haddr, *keyHash)
 }
 
-
 // UpdateType is a request for a store entry
 type UpdateType struct {
-	Parent      *hash.Hash `json:"parent"`
-	Value       []byte    `json:"value"`
+	Parent *hash.Hash `json:"parent"`
+	Value  []byte     `json:"value"`
 }
-
 
 // StoreUpdate will update a key or collection
 func StoreUpdate(w http.ResponseWriter, req *http.Request) {
 	updateRequest := &UpdateType{}
 	err := json.NewDecoder(req.Body).Decode(updateRequest)
 	if err != nil {
-		httputils.ErrorOut(w, http.StatusBadRequest, "Malformed JSON: " + err.Error())
+		httputils.ErrorOut(w, http.StatusBadRequest, "Malformed JSON: "+err.Error())
 		return
 	}
 
@@ -113,7 +111,6 @@ func StoreDelete(w http.ResponseWriter, req *http.Request) {
 	deleteKey(w, *haddr, *keyHash)
 }
 
-
 func storeKey(w http.ResponseWriter, addrHash, keyHash hash.Hash, parentHash *hash.Hash, value []byte) {
 	err := openDb(w, addrHash)
 	if err != nil {
@@ -122,10 +119,9 @@ func storeKey(w http.ResponseWriter, addrHash, keyHash hash.Hash, parentHash *ha
 	}
 	defer closeDb(addrHash)
 
-
 	// Add entry
-	entry := &store.StoreEntryType{
-		Data:           value,
+	entry := &store.EntryType{
+		Data: value,
 	}
 	storesvc := container.Instance.GetStoreRepo()
 	err = storesvc.SetEntry(addrHash, keyHash, parentHash, *entry)

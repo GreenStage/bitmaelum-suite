@@ -26,8 +26,8 @@ import (
 	"github.com/bitmaelum/bitmaelum-suite/pkg/hash"
 )
 
-// StoreEntryType is the structure that defines a key entry
-type StoreEntryType struct {
+// EntryType is the structure that defines a key entry
+type EntryType struct {
 	Key            hash.Hash   `json:"key"`       // Key of the entry
 	Parent         *hash.Hash  `json:"parent"`    // key of the parent, or nil when it's the root
 	Data           []byte      `json:"data"`      // actual (encrypted) data
@@ -37,20 +37,20 @@ type StoreEntryType struct {
 }
 
 // NewEntry creates a new entry
-func NewEntry(data []byte) StoreEntryType {
-	return StoreEntryType{
+func NewEntry(data []byte) EntryType {
+	return EntryType{
 		Data:      data,
 		Timestamp: internal.TimeNow().Unix(),
 	}
 }
 
 // MarshalBinary converts a storeentrytype to binary format so it can be stored in Redis
-func (e *StoreEntryType) MarshalBinary() (data []byte, err error) {
+func (e *EntryType) MarshalBinary() (data []byte, err error) {
 	return json.Marshal(e)
 }
 
 // UnmarshalBinary converts binary to a ticket so it can be fetched from Redis
-func (e *StoreEntryType) UnmarshalBinary(data []byte) error {
+func (e *EntryType) UnmarshalBinary(data []byte) error {
 	return json.Unmarshal(data, e)
 }
 
@@ -58,8 +58,8 @@ func (e *StoreEntryType) UnmarshalBinary(data []byte) error {
 type Repository interface {
 	HasEntry(account, key hash.Hash) bool
 	RemoveEntry(account, key hash.Hash, recursive bool) error
-	GetEntry(account, key hash.Hash) (*StoreEntryType, error)
-	SetEntry(account, key hash.Hash, parent *hash.Hash, entry StoreEntryType) error
+	GetEntry(account, key hash.Hash) (*EntryType, error)
+	SetEntry(account, key hash.Hash, parent *hash.Hash, entry EntryType) error
 
 	OpenDb(account hash.Hash) error
 	CloseDb(account hash.Hash) error
