@@ -56,10 +56,10 @@ func (e *StoreEntryType) UnmarshalBinary(data []byte) error {
 
 // Repository is a store repository to fetch and store tickets
 type Repository interface {
-	HasEntry(account hash.Hash, key string) bool
-	RemoveEntry(account hash.Hash, key string) error
-	GetEntry(account hash.Hash, key string) (*StoreEntryType, error)
-	SetEntry(account hash.Hash, key string, entry StoreEntryType) error
+	HasEntry(account, key hash.Hash) bool
+	RemoveEntry(account, key hash.Hash, recursive bool) error
+	GetEntry(account, key hash.Hash) (*StoreEntryType, error)
+	SetEntry(account, key hash.Hash, parent *hash.Hash, entry StoreEntryType) error
 
 	OpenDb(account hash.Hash) error
 	CloseDb(account hash.Hash) error

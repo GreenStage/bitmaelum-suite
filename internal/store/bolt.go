@@ -23,7 +23,6 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
-	"strings"
 
 	"github.com/bitmaelum/bitmaelum-suite/internal"
 	"github.com/bitmaelum/bitmaelum-suite/pkg/hash"
@@ -33,7 +32,8 @@ import (
 
 var (
 	errKeyNotFound   = errors.New("store: key not found")
-	errNoEmptyParent = errors.New("store: no empty parent allowed")
+	errParentNotFound = errors.New("store: parent entry not found")
+	errCannotRemoveCollection = errors.New("store: cannot remove collection")
 )
 
 type boltRepo struct {
@@ -70,12 +70,15 @@ func (b boltRepo) OpenDb(account hash.Hash) error {
 	// Store in cache
 	b.Clients[account.String()] = db
 
+	rootHash := hash.New(account.String() + "/")
+
 	// Check if root exists
-	if !b.HasEntry(account, "/") {
+	if !b.HasEntry(account, rootHash) {
 		entry := &StoreEntryType{
 			Timestamp: internal.TimeNow().Unix(),
 		}
-		err := b.SetEntry(account, "/", *entry)
+
+		err := b.SetEntry(account, rootHash, nil, *entry)
 		if err != nil {
 			return err
 		}
@@ -96,8 +99,9 @@ func (b boltRepo) CloseDb(account hash.Hash) error {
 	return db.Close()
 }
 
+
 // HasEntry will return true when the database has the specific key present
-func (b boltRepo) HasEntry(account hash.Hash, key string) bool {
+func (b boltRepo) HasEntry(account, key hash.Hash) bool {
 	client, err := b.getClientDb(account)
 	if err != nil {
 		return false
@@ -109,8 +113,7 @@ func (b boltRepo) HasEntry(account hash.Hash, key string) bool {
 			return errKeyNotFound
 		}
 
-		keyHash := hash.New(account.String() + key)
-		data := bucket.Get(keyHash.Byte())
+		data := bucket.Get(key.Byte())
 		if data == nil {
 			return errKeyNotFound
 		}
@@ -122,7 +125,7 @@ func (b boltRepo) HasEntry(account hash.Hash, key string) bool {
 }
 
 // GetEntry will return the given entry
-func (b boltRepo) GetEntry(account hash.Hash, key string) (*StoreEntryType, error) {
+func (b boltRepo) GetEntry(account, key hash.Hash) (*StoreEntryType, error) {
 	client, err := b.getClientDb(account)
 	if err != nil {
 		return nil, err
@@ -136,14 +139,8 @@ func (b boltRepo) GetEntry(account hash.Hash, key string) (*StoreEntryType, erro
 			return errKeyNotFound
 		}
 
-		keyHash := hash.New(account.String() + key)
-		data := bucket.Get(keyHash.Byte())
-		if data == nil {
-			return errKeyNotFound
-		}
-
-		err := json.Unmarshal(data, &entry)
-		if err != nil {
+		entry = getFromBucket(bucket, key)
+		if entry == nil {
 			return errKeyNotFound
 		}
 
@@ -157,22 +154,81 @@ func (b boltRepo) GetEntry(account hash.Hash, key string) (*StoreEntryType, erro
 	return entry, nil
 }
 
-func (b boltRepo) SetEntry(account hash.Hash, key string, entry StoreEntryType) error {
+func (b boltRepo) SetEntry(account, key hash.Hash, parent *hash.Hash, entry StoreEntryType) error {
 	client, err := b.getClientDb(account)
 	if err != nil {
 		return err
 	}
 
+	// Check if parent exists
+	if parent != nil && ! b.HasEntry(account, *parent) {
+		return errParentNotFound
+	}
+
 	// Update entry and tree back to root with this timestamp
 	lastUpdateTimestamp := internal.TimeNow().Unix()
 
-	parents := getParentHashes(account, key)
+	// Update entry values
+	entry.Timestamp = lastUpdateTimestamp
+	entry.Key = key
+	entry.Parent = parent
 
-	// Populate key and parent hash in our store entry
-	keyHash := hash.New(account.String() + key)
-	entry.Key = keyHash
-	if len(parents) > 0 {
-		entry.Parent = &parents[len(parents)-1].Hash
+	return client.Update(func(tx *bolt.Tx) error {
+		bucket, err := tx.CreateBucketIfNotExists([]byte(BucketName))
+		if err != nil {
+			logrus.Trace("unable to create bucket on BOLT: ", BucketName, err)
+			return err
+		}
+
+		err = putInBucket(bucket, entry)
+		if err != nil {
+			return err
+		}
+
+		// Update all parents
+		return updateParentEntries(bucket, entry, lastUpdateTimestamp)
+	})
+}
+
+func getFromBucket(bucket *bolt.Bucket, key hash.Hash) *StoreEntryType {
+	data := bucket.Get(key.Byte())
+	if data == nil {
+		return nil
+	}
+
+	entry := &StoreEntryType{}
+	err := json.Unmarshal(data, &entry)
+	if err != nil {
+		return nil
+	}
+
+	return entry
+}
+
+func putInBucket(bucket *bolt.Bucket, entry StoreEntryType) error {
+	buf, err := json.Marshal(entry)
+	if err != nil {
+		return err
+	}
+
+	return bucket.Put(entry.Key.Byte(), buf)
+}
+
+// RemoveEntry will remove the key from the database, and update the collection tree
+func (b boltRepo) RemoveEntry(account, key hash.Hash, recursive bool) error {
+	client, err := b.getClientDb(account)
+	if err != nil {
+		return err
+	}
+
+	entry, err := b.GetEntry(account, key)
+	if err != nil {
+		return errKeyNotFound
+	}
+
+	// @TODO: recursive deletion is not yet supported
+	if len(entry.Entries) > 0 {
+		return errCannotRemoveCollection
 	}
 
 	return client.Update(func(tx *bolt.Tx) error {
@@ -182,57 +238,34 @@ func (b boltRepo) SetEntry(account hash.Hash, key string, entry StoreEntryType) 
 			return err
 		}
 
-		// Store entry
-		buf, err := json.Marshal(entry)
+		// Remove actual entry
+		err = bucket.Delete(entry.Key.Byte())
 		if err != nil {
 			return err
 		}
 
-		err = bucket.Put(entry.Key.Byte(), buf)
+		// Get parent entry and remove entry reference
+		parentEntry := &StoreEntryType{}
+		data := bucket.Get(entry.Parent.Byte())
+		err = json.Unmarshal(data, &parentEntry)
 		if err != nil {
 			return err
 		}
 
-		// Iterate parents back to root and update
-		for _, parent := range parents {
-			// Get parent entry
-			data := bucket.Get(parent.Hash.Byte())
-			if data == nil {
-				// Parent not found. Add a new one
-				nextEntry := &StoreEntryType{
-					Key:       parent.Hash,
-					Timestamp: 0,
-					Entries:   []hash.Hash{entry.Key},
-				}
-				entry = *nextEntry
-			} else {
-				err = json.Unmarshal(data, &entry)
-				if err != nil {
-					return err
-				}
-			}
+		// Update entry and tree back to root with this timestamp
+		lastUpdateTimestamp := internal.TimeNow().Unix()
 
-			// Store current entry
-			entry.Timestamp = lastUpdateTimestamp
+		parentEntry.Timestamp = lastUpdateTimestamp
+		parentEntry.Entries = removeFromEntries(parentEntry.Entries, entry.Key)
 
-			buf, err := json.Marshal(entry)
-			if err != nil {
-				return err
-			}
-
-			err = bucket.Put(entry.Key.Byte(), buf)
-			if err != nil {
-				return err
-			}
+		err = putInBucket(bucket, *parentEntry)
+		if err != nil {
+			return err
 		}
 
-		return nil
+		// Update all parents
+		return updateParentEntries(bucket, *parentEntry, lastUpdateTimestamp)
 	})
-}
-
-// RemoveEntry will remove the key from the database, and update the collection tree
-func (b boltRepo) RemoveEntry(account hash.Hash, key string) error {
-	panic("implement me")
 }
 
 // getClientDB will open or create the account's store database
@@ -252,35 +285,61 @@ func (b boltRepo) getClientDb(account hash.Hash) (*bolt.DB, error) {
 	return b.Clients[account.String()], nil
 }
 
-type ParentMapType struct {
-	Key  string
-	Hash hash.Hash
+
+// updateEntries will add the key, but only when it's not yet present in the list
+func updateEntries(entries []hash.Hash, key hash.Hash) []hash.Hash {
+	for i := range entries {
+		if entries[i].String() == key.String() {
+			return entries
+		}
+	}
+
+	entries = append(entries, key)
+	return entries
 }
 
-func getParentHashes(addr hash.Hash, key string) []ParentMapType {
-	// Assume always absolute from root. Remove the root if present
-	if len(key) > 0 && key[0] == '/' {
-		key = key[1:]
+// removeFromEntries will add the key, but only when it's not yet present in the list
+func removeFromEntries(entries []hash.Hash, key hash.Hash) []hash.Hash {
+	// Find element in list
+	found := -1
+	for i := range entries {
+		if entries[i].String() == key.String() {
+			found = i
+		}
 	}
 
-	// Root key, does not have a parent
-	if key == "" {
-		return nil
+	if found == -1 {
+		return entries
 	}
 
-	var parents []ParentMapType
+	return append(entries[:found], entries[found+1:]...)
+}
 
-	parts := strings.Split(key, "/")
-	for len(parts) > 0 {
-		parts = parts[:len(parts)-1]
+func updateParentEntries(bucket *bolt.Bucket, entry StoreEntryType, ts int64) error {
+	parent := entry.Parent
 
-		parentKey := strings.Join(parts, "/")
+	for parent != nil {
+		curEntryKey := entry.Key
 
-		parents = append(parents, ParentMapType{
-			Key:  "/" + parentKey,
-			Hash: hash.New(addr.String() + "/" + parentKey),
-		})
+		// Get parent entry
+		entry := getFromBucket(bucket, *parent)
+		if entry == nil {
+			return errParentNotFound
+		}
+
+		// Update this parent entry
+		entry.Timestamp = ts
+		entry.Entries = updateEntries(entry.Entries, curEntryKey)
+
+		// Save back
+		err := putInBucket(bucket, *entry)
+		if err != nil {
+			return err
+		}
+
+		// Onto the next parent until we hit nil
+		parent = entry.Parent
 	}
 
-	return parents
+	return nil
 }

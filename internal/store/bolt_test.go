@@ -27,42 +27,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bitmaelum/bitmaelum-suite/internal"
 	"github.com/bitmaelum/bitmaelum-suite/pkg/hash"
 	"github.com/stretchr/testify/assert"
 )
-
-func TestParentHashes(t *testing.T) {
-	acc1 := hash.New("foo!")
-
-	parents := getParentHashes(acc1, "/foo/bar/baz")
-	assert.Len(t, parents, 3)
-	assert.Equal(t, "/foo/bar", parents[0].Key)
-	assert.Equal(t, "79780c884b68f0bb259371679413fc3607c3c4bc9eef2d675ab5266e09f04bce", parents[0].Hash.String())
-	assert.Equal(t, "/foo", parents[1].Key)
-	assert.Equal(t, "f2f5d73819bf7302d137500293b85e5e13e8c2069e3f3ad85fa4ad8ea7ed1efe", parents[1].Hash.String())
-	assert.Equal(t, "/", parents[2].Key)
-	assert.Equal(t, "94723340d93b27ca21384fa64db760e10ee2382a3ded94f1e4243bacc24825e6", parents[2].Hash.String())
-
-	parents = getParentHashes(acc1, "")
-	assert.Len(t, parents, 0)
-	assert.Nil(t, parents)
-
-	parents = getParentHashes(acc1, "/")
-	assert.Len(t, parents, 0)
-	assert.Nil(t, parents)
-
-	parents = getParentHashes(acc1, "/foo/bar")
-	assert.Len(t, parents, 2)
-	assert.Equal(t, "/foo", parents[0].Key)
-	assert.Equal(t, "f2f5d73819bf7302d137500293b85e5e13e8c2069e3f3ad85fa4ad8ea7ed1efe", parents[0].Hash.String())
-	assert.Equal(t, "/", parents[1].Key)
-	assert.Equal(t, "94723340d93b27ca21384fa64db760e10ee2382a3ded94f1e4243bacc24825e6", parents[1].Hash.String())
-
-	parents = getParentHashes(acc1, "/foo")
-	assert.Len(t, parents, 1)
-	assert.Equal(t, "/", parents[0].Key)
-	assert.Equal(t, "94723340d93b27ca21384fa64db760e10ee2382a3ded94f1e4243bacc24825e6", parents[0].Hash.String())
-}
 
 func TestBoltStorage(t *testing.T) {
 	var (
@@ -73,14 +41,19 @@ func TestBoltStorage(t *testing.T) {
 	rand.Seed(time.Now().UnixNano())
 
 	acc1 := hash.New("foo!")
-	// acc2 := hash.New("bar!")
+	acc2 := hash.New("bar!")
+
+
+	internal.SetMockTime(func() time.Time {
+		return time.Date(2010, 01, 01, 12, 34, 56, 0, time.UTC)
+	})
 
 	// Unfortunately, boltdb cannot be used with afero
 	path := filepath.Join(os.TempDir(), fmt.Sprintf("store-%d", rand.Int31()))
 	_ = os.MkdirAll(path, 0755)
 
 	defer func() {
-		_ = os.Remove(path)
+		_ = os.RemoveAll(path)
 	}()
 
 	b := NewBoltRepository(path)
@@ -90,28 +63,33 @@ func TestBoltStorage(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Initially, only root should be present
-	ok = b.HasEntry(acc1, "/")
+	ok = b.HasEntry(acc1, makeHash(acc1, "/"))
 	assert.True(t, ok)
-	ok = b.HasEntry(acc1, "/something")
+	ok = b.HasEntry(acc1, makeHash(acc1, "/something"))
+	assert.False(t, ok)
+
+	// Incorrect hash
+	ok = b.HasEntry(acc1, makeHash(acc2, "/"))
 	assert.False(t, ok)
 
 	// Get root entry
-	entry, err := b.GetEntry(acc1, "/")
+	entry, err := b.GetEntry(acc1, makeHash(acc1, "/"))
 	assert.NoError(t, err)
 	assert.NotNil(t, entry)
 
 	// Add entry
 	entry2 := NewEntry([]byte("foobar"))
-	err = b.SetEntry(acc1, "/contacts", entry2)
+	p := makeHash(acc1, "/")
+	err = b.SetEntry(acc1, makeHash(acc1, "/contacts"), &p, entry2)
 	assert.NoError(t, err)
 
-	ok = b.HasEntry(acc1, "/")
+	ok = b.HasEntry(acc1, makeHash(acc1, "/"))
 	assert.True(t, ok)
-	ok = b.HasEntry(acc1, "/contacts")
+	ok = b.HasEntry(acc1, makeHash(acc1, "/contacts"))
 	assert.True(t, ok)
 
 
-	entry, err = b.GetEntry(acc1, "/contacts")
+	entry, err = b.GetEntry(acc1, makeHash(acc1, "/contacts"))
 	assert.NoError(t, err)
 	assert.NotNil(t, entry)
 	assert.Equal(t, "9f198242afd0a2660077b05c90c4aad8807b381f8e1af89e556c9a0e0e66331d", entry.Key.String())
@@ -119,35 +97,252 @@ func TestBoltStorage(t *testing.T) {
 	assert.Equal(t, []byte("foobar"), entry.Data)
 
 
-	// Create path
+	// Create entry without correct path
 	entry2 = NewEntry([]byte("foobar"))
-	err = b.SetEntry(acc1, "/foo", entry2)
-	assert.NoError(t, err)
-	entry2 = NewEntry([]byte("foobar"))
-	err = b.SetEntry(acc1, "/foo/bar", entry2)
-	assert.NoError(t, err)
-	entry2 = NewEntry([]byte("foobar"))
-	err = b.SetEntry(acc1, "/foo/bar/baz", entry2)
-	assert.NoError(t, err)
-
-	entry2 = NewEntry([]byte("foobar"))
-	err = b.SetEntry(acc1, "/foo/bar/baz/baq", entry2)
-	assert.NoError(t, err)
-
-	entry, err = b.GetEntry(acc1, "/foo/bar/baz/baq")
-	assert.NoError(t, err)
-	assert.NotNil(t, entry)
-
-
-
-	entry2 = NewEntry([]byte("foobar"))
-	err = b.SetEntry(acc1, "/this/path/must/be/set", entry2)
-	assert.NoError(t, err)
-
-	ok = b.HasEntry(acc1, "/this/path")
-	assert.True(t, ok)
-
-	ok = b.HasEntry(acc1, "/this/path/does/not/exists")
-	assert.False(t, ok)
+	p = makeHash(acc1, "/path/not/exist")
+	err = b.SetEntry(acc1, makeHash(acc1, "/path/not/exist/item"), &p, entry2)
+	assert.Error(t, err)
 }
 
+func TestTimePropagation(t *testing.T) {
+	var (
+		err error
+	)
+
+	rand.Seed(time.Now().UnixNano())
+
+	acc1 := hash.New("foo!")
+
+	internal.SetMockTime(func() time.Time {
+		return time.Date(2010, 01, 01, 12, 34, 56, 0, time.UTC)
+	})
+
+	// Unfortunately, boltdb cannot be used with afero
+	path := filepath.Join(os.TempDir(), fmt.Sprintf("store-%d", rand.Int31()))
+	_ = os.MkdirAll(path, 0755)
+
+	defer func() {
+		_ = os.RemoveAll(path)
+	}()
+
+	b := NewBoltRepository(path)
+	assert.NotNil(t, b)
+
+	err = b.OpenDb(acc1)
+	assert.NoError(t, err)
+
+	// Initially, only root should be present
+	entry := NewEntry([]byte("contact list"))
+	p := makeHash(acc1, "/")
+	err = b.SetEntry(acc1, makeHash(acc1, "/contacts"), &p, entry)
+	assert.NoError(t, err)
+
+	entry = NewEntry([]byte("john doe"))
+	p = makeHash(acc1, "/contacts")
+	err = b.SetEntry(acc1, makeHash(acc1, "/contacts/1"), &p, entry)
+	assert.NoError(t, err)
+
+	entry = NewEntry([]byte("foo bar"))
+	p = makeHash(acc1, "/contacts")
+	err = b.SetEntry(acc1, makeHash(acc1, "/contacts/2"), &p, entry)
+	assert.NoError(t, err)
+
+	entry = NewEntry([]byte("jane austin"))
+	p = makeHash(acc1, "/contacts")
+	err = b.SetEntry(acc1, makeHash(acc1, "/contacts/3"), &p, entry)
+	assert.NoError(t, err)
+
+	entry2, err := b.GetEntry(acc1, makeHash(acc1, "/contacts"))
+	assert.NoError(t, err)
+	assert.Len(t, entry2.Entries, 3)
+
+	entry2, err = b.GetEntry(acc1, makeHash(acc1, "/contacts/1"))
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1262349296), entry2.Timestamp)
+
+	entry2, err = b.GetEntry(acc1, makeHash(acc1, "/contacts/2"))
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1262349296), entry2.Timestamp)
+
+	entry2, err = b.GetEntry(acc1, makeHash(acc1, "/contacts"))
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1262349296), entry2.Timestamp)
+
+	entry2, err = b.GetEntry(acc1, makeHash(acc1, "/"))
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1262349296), entry2.Timestamp)
+
+
+	// New entry
+
+	internal.SetMockTime(func() time.Time {
+		return time.Date(2010, 05, 05, 12, 34, 56, 0, time.UTC)
+	})
+
+	entry = NewEntry([]byte("latest entry"))
+	p = makeHash(acc1, "/contacts")
+	err = b.SetEntry(acc1, makeHash(acc1, "/contacts/7"), &p, entry)
+	assert.NoError(t, err)
+
+
+	entry2, err = b.GetEntry(acc1, makeHash(acc1, "/contacts"))
+	assert.NoError(t, err)
+	assert.Len(t, entry2.Entries, 4)
+
+	entry2, err = b.GetEntry(acc1, makeHash(acc1, "/contacts/1"))
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1262349296), entry2.Timestamp)
+
+	entry2, err = b.GetEntry(acc1, makeHash(acc1, "/contacts/7"))
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1273062896), entry2.Timestamp)
+
+	entry2, err = b.GetEntry(acc1, makeHash(acc1, "/contacts/2"))
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1262349296), entry2.Timestamp)
+
+	entry2, err = b.GetEntry(acc1, makeHash(acc1, "/contacts"))
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1273062896), entry2.Timestamp)
+
+	entry2, err = b.GetEntry(acc1, makeHash(acc1, "/"))
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1273062896), entry2.Timestamp)
+
+
+	// Update entry
+
+	internal.SetMockTime(func() time.Time {
+		return time.Date(2010, 8, 8, 12, 34, 56, 0, time.UTC)
+	})
+
+	entry = NewEntry([]byte("update entry"))
+	p = makeHash(acc1, "/contacts")
+	err = b.SetEntry(acc1, makeHash(acc1, "/contacts/2"), &p, entry)
+	assert.NoError(t, err)
+
+
+	entry2, err = b.GetEntry(acc1, makeHash(acc1, "/contacts"))
+	assert.NoError(t, err)
+	assert.Len(t, entry2.Entries, 4)
+
+	entry2, err = b.GetEntry(acc1, makeHash(acc1, "/contacts/1"))
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1262349296), entry2.Timestamp)
+
+	entry2, err = b.GetEntry(acc1, makeHash(acc1, "/contacts/7"))
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1273062896), entry2.Timestamp)
+
+	entry2, err = b.GetEntry(acc1, makeHash(acc1, "/contacts/2"))
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1281270896), entry2.Timestamp)
+
+	entry2, err = b.GetEntry(acc1, makeHash(acc1, "/contacts"))
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1281270896), entry2.Timestamp)
+
+	entry2, err = b.GetEntry(acc1, makeHash(acc1, "/"))
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1281270896), entry2.Timestamp)
+}
+
+
+func TestRemoveEntries(t *testing.T) {
+	var (
+		err error
+	)
+
+	rand.Seed(time.Now().UnixNano())
+
+	acc1 := hash.New("foo!")
+
+	internal.SetMockTime(func() time.Time {
+		return time.Date(2010, 01, 01, 12, 34, 56, 0, time.UTC)
+	})
+
+	// Unfortunately, boltdb cannot be used with afero
+	path := filepath.Join(os.TempDir(), fmt.Sprintf("store-%d", rand.Int31()))
+	_ = os.MkdirAll(path, 0755)
+
+	defer func() {
+		_ = os.RemoveAll(path)
+	}()
+
+	b := NewBoltRepository(path)
+	assert.NotNil(t, b)
+
+	err = b.OpenDb(acc1)
+	assert.NoError(t, err)
+
+	// Initially, only root should be present
+	entry := NewEntry([]byte("contact list"))
+	p := makeHash(acc1, "/")
+	err = b.SetEntry(acc1, makeHash(acc1, "/contacts"), &p, entry)
+	assert.NoError(t, err)
+
+	entry = NewEntry([]byte("john doe"))
+	p = makeHash(acc1, "/contacts")
+	err = b.SetEntry(acc1, makeHash(acc1, "/contacts/1"), &p, entry)
+	assert.NoError(t, err)
+
+	entry = NewEntry([]byte("foo bar"))
+	p = makeHash(acc1, "/contacts")
+	err = b.SetEntry(acc1, makeHash(acc1, "/contacts/2"), &p, entry)
+	assert.NoError(t, err)
+
+	entry = NewEntry([]byte("jane austin"))
+	p = makeHash(acc1, "/contacts")
+	err = b.SetEntry(acc1, makeHash(acc1, "/contacts/3"), &p, entry)
+	assert.NoError(t, err)
+
+	entry2, err := b.GetEntry(acc1, makeHash(acc1, "/contacts"))
+	assert.NoError(t, err)
+	assert.Len(t, entry2.Entries, 3)
+
+
+	// Remove entry
+
+	internal.SetMockTime(func() time.Time {
+		return time.Date(2010, 8, 8, 12, 34, 56, 0, time.UTC)
+	})
+
+	// Cannot remove collections
+	err = b.RemoveEntry(acc1, makeHash(acc1, "/contacts"), true)
+	assert.Error(t, err)
+	err = b.RemoveEntry(acc1, makeHash(acc1, "/"), true)
+	assert.Error(t, err)
+
+
+	// Remove second entry
+	err = b.RemoveEntry(acc1, makeHash(acc1, "/contacts/2"), true)
+	assert.NoError(t, err)
+
+
+	entry2, err = b.GetEntry(acc1, makeHash(acc1, "/contacts"))
+	assert.NoError(t, err)
+	assert.Len(t, entry2.Entries, 2)
+
+	entry2, err = b.GetEntry(acc1, makeHash(acc1, "/contacts/1"))
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1262349296), entry2.Timestamp)
+
+	ok := b.HasEntry(acc1, makeHash(acc1, "/contacts/2"))
+	assert.False(t, ok)
+
+	entry2, err = b.GetEntry(acc1, makeHash(acc1, "/contacts/3"))
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1262349296), entry2.Timestamp)
+
+	entry2, err = b.GetEntry(acc1, makeHash(acc1, "/contacts"))
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1281270896), entry2.Timestamp)
+
+	entry2, err = b.GetEntry(acc1, makeHash(acc1, "/"))
+	assert.NoError(t, err)
+	assert.Equal(t, int64(1281270896), entry2.Timestamp)
+}
+
+func makeHash(account hash.Hash, key string) hash.Hash {
+	return hash.New(account.String() + key)
+}
