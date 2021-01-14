@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"time"
 
 	"github.com/bitmaelum/bitmaelum-suite/internal"
 	"github.com/bitmaelum/bitmaelum-suite/pkg/hash"
@@ -61,7 +62,9 @@ func (b boltRepo) OpenDb(account hash.Hash) error {
 	p := filepath.Join(b.path, account.String()[:2], account.String()[2:], BoltDBFile)
 	logrus.Trace("opening boltdb file: ", p)
 
-	db, err := bolt.Open(p, 0600, nil)
+	opts := bolt.DefaultOptions
+	opts.Timeout = 5 * time.Second
+	db, err := bolt.Open(p, 0600, opts)
 	if err != nil {
 		logrus.Trace("error while opening boltdb: ", err)
 		return err
@@ -184,6 +187,19 @@ func (b boltRepo) SetEntry(account, key hash.Hash, parent *hash.Hash, entry Stor
 			return err
 		}
 
+		// Update parent entry
+		if entry.Parent != nil {
+			parentEntry := getFromBucket(bucket, *entry.Parent)
+			parentEntry.Entries = addToEntries(parentEntry.Entries, entry.Key)
+
+			err := putInBucket(bucket, *parentEntry)
+			if err != nil {
+				logrus.Trace("error while putting parentEntry in bucket")
+				return err
+			}
+		}
+
+		logrus.Trace("updating parent entries")
 		// Update all parents
 		return updateParentEntries(bucket, entry, lastUpdateTimestamp)
 	})
@@ -243,27 +259,19 @@ func (b boltRepo) RemoveEntry(account, key hash.Hash, recursive bool) error {
 			return err
 		}
 
-		// Get parent entry and remove entry reference
-		parentEntry := &StoreEntryType{}
-		data := bucket.Get(entry.Parent.Byte())
-		err = json.Unmarshal(data, &parentEntry)
-		if err != nil {
-			return err
-		}
-
-		// Update entry and tree back to root with this timestamp
-		lastUpdateTimestamp := internal.TimeNow().Unix()
-
-		parentEntry.Timestamp = lastUpdateTimestamp
-		parentEntry.Entries = removeFromEntries(parentEntry.Entries, entry.Key)
-
-		err = putInBucket(bucket, *parentEntry)
-		if err != nil {
-			return err
+		// Update parent entry
+		if entry.Parent != nil {
+			parentEntry := getFromBucket(bucket, *entry.Parent)
+			parentEntry.Entries = removeFromEntries(parentEntry.Entries, entry.Key)
+			err := putInBucket(bucket, *parentEntry)
+			if err != nil {
+				return err
+			}
 		}
 
 		// Update all parents
-		return updateParentEntries(bucket, *parentEntry, lastUpdateTimestamp)
+		lastUpdateTimestamp := internal.TimeNow().Unix()
+		return updateParentEntries(bucket, *entry, lastUpdateTimestamp)
 	})
 }
 
@@ -285,16 +293,15 @@ func (b boltRepo) getClientDb(account hash.Hash) (*bolt.DB, error) {
 }
 
 
-// updateEntries will add the key, but only when it's not yet present in the list
-func updateEntries(entries []hash.Hash, key hash.Hash) []hash.Hash {
+// addToEntries will add the key, but only when it's not yet present in the list
+func addToEntries(entries []hash.Hash, key hash.Hash) []hash.Hash {
 	for i := range entries {
 		if entries[i].String() == key.String() {
 			return entries
 		}
 	}
 
-	entries = append(entries, key)
-	return entries
+	return append(entries, key)
 }
 
 // removeFromEntries will add the key, but only when it's not yet present in the list
@@ -314,30 +321,24 @@ func removeFromEntries(entries []hash.Hash, key hash.Hash) []hash.Hash {
 	return append(entries[:found], entries[found+1:]...)
 }
 
-func updateParentEntries(bucket *bolt.Bucket, entry StoreEntryType, ts int64) error {
-	parent := entry.Parent
+func updateParentEntries(bucket *bolt.Bucket, initialEntry StoreEntryType, ts int64) error {
+	entry := &initialEntry
 
-	for parent != nil {
-		curEntryKey := entry.Key
-
+	for entry.Parent != nil {
 		// Get parent entry
-		entry := getFromBucket(bucket, *parent)
+		entry = getFromBucket(bucket, *entry.Parent)
 		if entry == nil {
 			return errParentNotFound
 		}
 
 		// Update this parent entry
 		entry.Timestamp = ts
-		entry.Entries = updateEntries(entry.Entries, curEntryKey)
 
 		// Save back
 		err := putInBucket(bucket, *entry)
 		if err != nil {
 			return err
 		}
-
-		// Onto the next parent until we hit nil
-		parent = entry.Parent
 	}
 
 	return nil

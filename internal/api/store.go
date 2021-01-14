@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/bitmaelum/bitmaelum-suite/internal/store"
 	"github.com/bitmaelum/bitmaelum-suite/pkg/hash"
@@ -51,8 +52,15 @@ func (api *API) StoreGetKey(addr hash.Hash, key string) (*store.StoreEntryType, 
 
 func (api *API) StorePutValue(addr hash.Hash, key string, value string) error {
 	// Calc parentKey
-	keyHash := hash.New(addr.String() + key)
 	parentKey, _ := filepath.Split(key)
+	// correct "/foo/" to "/foo" from "/foo/bar"
+	parentKey = strings.TrimRight(parentKey, "/")
+	// correct "" to "/" from "/foo"
+	if parentKey == "" {
+		parentKey = "/"
+	}
+
+	keyHash := hash.New(addr.String() + key)
 	parentHash := hash.New(addr.String() + parentKey)
 
 	var parent interface{} = parentHash.String()
