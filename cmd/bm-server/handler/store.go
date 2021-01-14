@@ -20,12 +20,13 @@
 package handler
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 
 	"github.com/bitmaelum/bitmaelum-suite/cmd/bm-server/internal/httputils"
-	"github.com/bitmaelum/bitmaelum-suite/internal"
 	"github.com/bitmaelum/bitmaelum-suite/internal/container"
+	"github.com/bitmaelum/bitmaelum-suite/internal/store"
 
 	"github.com/bitmaelum/bitmaelum-suite/pkg/hash"
 	"github.com/gorilla/mux"
@@ -43,7 +44,7 @@ func StoreGetRoot(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	getKey(w, *haddr, hash.New("/"))
+	getKey(w, *haddr, hash.New(haddr.String() + "/"))
 }
 
 // StoreGet will retrieve a key or collection
@@ -63,8 +64,36 @@ func StoreGet(w http.ResponseWriter, req *http.Request) {
 	getKey(w, *haddr, *keyHash)
 }
 
+
+// UpdateType is a request for a store entry
+type UpdateType struct {
+	Parent      *hash.Hash `json:"parent"`
+	Value       []byte    `json:"value"`
+}
+
+
 // StoreUpdate will update a key or collection
 func StoreUpdate(w http.ResponseWriter, req *http.Request) {
+	updateRequest := &UpdateType{}
+	err := json.NewDecoder(req.Body).Decode(updateRequest)
+	if err != nil {
+		httputils.ErrorOut(w, http.StatusBadRequest, "Malformed JSON: " + err.Error())
+		return
+	}
+
+	haddr, err := hash.NewFromHash(mux.Vars(req)["addr"])
+	if err != nil {
+		httputils.ErrorOut(w, http.StatusNotFound, accountNotFound)
+		return
+	}
+
+	keyHash, err := hash.NewFromHash(mux.Vars(req)["key"])
+	if err != nil {
+		httputils.ErrorOut(w, http.StatusNotFound, errKeyNotFound.Error())
+		return
+	}
+
+	storeKey(w, *haddr, *keyHash, updateRequest.Parent, updateRequest.Value)
 }
 
 // StoreDelete will remove a key or collection
@@ -85,9 +114,33 @@ func StoreDelete(w http.ResponseWriter, req *http.Request) {
 }
 
 
+func storeKey(w http.ResponseWriter, addrHash, keyHash hash.Hash, parentHash *hash.Hash, value []byte) {
+	err := openDb(w, addrHash)
+	if err != nil {
+		httputils.ErrorOut(w, http.StatusNotFound, errKeyNotFound.Error())
+		return
+	}
+	defer closeDb(addrHash)
+
+
+	// Add entry
+	entry := &store.StoreEntryType{
+		Data:           value,
+	}
+	storesvc := container.Instance.GetStoreRepo()
+	err = storesvc.SetEntry(addrHash, keyHash, parentHash, *entry)
+	if err != nil {
+		httputils.ErrorOut(w, http.StatusInternalServerError, errKeyNotFound.Error())
+		return
+	}
+
+	_ = httputils.JSONOut(w, http.StatusOK, nil)
+}
+
 func deleteKey(w http.ResponseWriter, addrHash hash.Hash, keyHash hash.Hash) {
 	err := openDb(w, addrHash)
 	if err != nil {
+		httputils.ErrorOut(w, http.StatusNotFound, errKeyNotFound.Error())
 		return
 	}
 	defer closeDb(addrHash)
@@ -99,7 +152,7 @@ func deleteKey(w http.ResponseWriter, addrHash hash.Hash, keyHash hash.Hash) {
 		return
 	}
 
-	err = storesvc.RemoveEntry(addrHash, keyHash)
+	err = storesvc.RemoveEntry(addrHash, keyHash, false)
 	if err != nil {
 		httputils.ErrorOut(w, http.StatusInternalServerError, errKeyNotFound.Error())
 		return
@@ -111,6 +164,7 @@ func deleteKey(w http.ResponseWriter, addrHash hash.Hash, keyHash hash.Hash) {
 func getKey(w http.ResponseWriter, addrHash hash.Hash, keyHash hash.Hash) {
 	err := openDb(w, addrHash)
 	if err != nil {
+		httputils.ErrorOut(w, http.StatusNotFound, errKeyNotFound.Error())
 		return
 	}
 	defer closeDb(addrHash)
@@ -122,35 +176,13 @@ func getKey(w http.ResponseWriter, addrHash hash.Hash, keyHash hash.Hash) {
 		return
 	}
 
-	// Check if the key is root.
-	if keyHash.String() == hash.New("/").String() {
-		_ = httputils.JSONOut(w, http.StatusOK, jsonOut{
-			"parent":     nil,
-			"collection": true,
-			"value":      "This is the root collection. It cannot be deleted",
-			"timestamp":  internal.TimeNow(),
-			"entries": []string{
-				hash.New("boxes").String(),
-				hash.New("contacts").String(),
-				hash.New("bm-client-gui").String(),
-			},
-		})
-	}
-
 	entry, err := storesvc.GetEntry(addrHash, keyHash)
 	if err != nil {
 		httputils.ErrorOut(w, http.StatusNotFound, errKeyNotFound.Error())
 		return
 	}
 
-	_ = httputils.JSONOut(w, http.StatusOK, jsonOut{
-		"parent":          entry.Parent,
-		"collection":      entry.IsCollection,
-		"data":            entry.Data,
-		"timestamp":       entry.Timestamp,
-		"entries":         entry.Entries,
-		"sub_collections": entry.SubCollections,
-	})
+	_ = httputils.JSONOut(w, http.StatusOK, entry)
 }
 
 func openDb(w http.ResponseWriter, addrHash hash.Hash) error {

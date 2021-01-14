@@ -31,8 +31,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var accountStoreListCmd = &cobra.Command{
-	Use:   "list",
+var accountStoreGetCmd = &cobra.Command{
+	Use:   "get",
 	Short: "Display store contents",
 	Run: func(cmd *cobra.Command, args []string) {
 		v := vault.OpenDefaultVault()
@@ -55,8 +55,10 @@ var accountStoreListCmd = &cobra.Command{
 			fmt.Println("cannot connect to API")
 			os.Exit(1)
 		}
-		entry, err := client.StoreGetKey(info.Address.Hash(), "/")
+		entry, err := client.StoreGetKey(info.Address.Hash(), *asgKey)
+
 		spew.Dump(entry)
+
 
 		// table := tablewriter.NewWriter(os.Stdout)
 		// table.SetHeader([]string{"Key", "Value"})
@@ -73,6 +75,15 @@ var accountStoreListCmd = &cobra.Command{
 	},
 }
 
+var (
+	asgKey *string
+)
+
+
 func init() {
-	accountStoreCmd.AddCommand(accountStoreListCmd)
+	accountStoreCmd.AddCommand(accountStoreGetCmd)
+
+	asgKey = accountStoreGetCmd.PersistentFlags().String("key", "", "Key to get")
+
+	_ = accountStorePutCmd.MarkPersistentFlagRequired("key")
 }

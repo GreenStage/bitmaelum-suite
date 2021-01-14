@@ -27,12 +27,11 @@ import (
 	"github.com/bitmaelum/bitmaelum-suite/cmd/bm-client/internal/container"
 	"github.com/bitmaelum/bitmaelum-suite/internal/api"
 	"github.com/bitmaelum/bitmaelum-suite/internal/vault"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/spf13/cobra"
 )
 
-var accountStoreListCmd = &cobra.Command{
-	Use:   "list",
+var accountStorePutCmd = &cobra.Command{
+	Use:   "put",
 	Short: "Display store contents",
 	Run: func(cmd *cobra.Command, args []string) {
 		v := vault.OpenDefaultVault()
@@ -55,8 +54,8 @@ var accountStoreListCmd = &cobra.Command{
 			fmt.Println("cannot connect to API")
 			os.Exit(1)
 		}
-		entry, err := client.StoreGetKey(info.Address.Hash(), "/")
-		spew.Dump(entry)
+
+		err = client.StorePutValue(info.Address.Hash(), *aspKey, *aspValue)
 
 		// table := tablewriter.NewWriter(os.Stdout)
 		// table.SetHeader([]string{"Key", "Value"})
@@ -73,6 +72,17 @@ var accountStoreListCmd = &cobra.Command{
 	},
 }
 
+var (
+	aspKey *string
+	aspValue *string
+)
+
 func init() {
-	accountStoreCmd.AddCommand(accountStoreListCmd)
+	accountStoreCmd.AddCommand(accountStorePutCmd)
+
+	aspKey = accountStorePutCmd.PersistentFlags().String("key", "", "Key to store")
+	aspValue = accountStorePutCmd.PersistentFlags().String("value", "", "Value to store")
+
+	_ = accountStorePutCmd.MarkPersistentFlagRequired("key")
+	_ = accountStorePutCmd.MarkPersistentFlagRequired("value")
 }

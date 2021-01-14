@@ -28,19 +28,19 @@ import (
 
 // StoreEntryType is the structure that defines a key entry
 type StoreEntryType struct {
-	Key            hash.Hash            // Key of the entry
-	Parent         *hash.Hash           // key of the parent, or nil when it's the root
-	Data           []byte               // actual (encrypted) data
-	Timestamp      int64                // Timestamp of this entry, or the highest timestamp of any entry below
-	Entries        []hash.Hash          // Keys to entries below this
-	SubCollections []hash.Hash          // TBD
+	Key            hash.Hash   `json:"key"`       // Key of the entry
+	Parent         *hash.Hash  `json:"parent"`    // key of the parent, or nil when it's the root
+	Data           []byte      `json:"data"`      // actual (encrypted) data
+	Timestamp      int64       `json:"timestamp"` // Timestamp of this entry, or the highest timestamp of any entry below
+	Entries        []hash.Hash `json:"entries"`   // Keys to entries below this
+	SubCollections []hash.Hash // TBD
 }
 
 // NewEntry creates a new entry
 func NewEntry(data []byte) StoreEntryType {
 	return StoreEntryType{
-		Data:           data,
-		Timestamp:      internal.TimeNow().Unix(),
+		Data:      data,
+		Timestamp: internal.TimeNow().Unix(),
 	}
 }
 
@@ -64,4 +64,3 @@ type Repository interface {
 	OpenDb(account hash.Hash) error
 	CloseDb(account hash.Hash) error
 }
-

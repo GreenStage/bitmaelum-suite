@@ -20,14 +20,16 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
+	"path/filepath"
 
+	"github.com/bitmaelum/bitmaelum-suite/internal/store"
 	"github.com/bitmaelum/bitmaelum-suite/pkg/hash"
 )
 
-
-func (api *API) GetStoreKey(addr hash.Hash, key string) ([]byte, error) {
-	keyHash := hash.New(key)
+func (api *API) StoreGetKey(addr hash.Hash, key string) (*store.StoreEntryType, error) {
+	keyHash := hash.New(addr.String() + key)
 
 	body, statusCode, err := api.Get(fmt.Sprintf("/account/%s/store/%s", addr.String(), keyHash.String()))
 	if err != nil {
@@ -38,5 +40,43 @@ func (api *API) GetStoreKey(addr hash.Hash, key string) ([]byte, error) {
 		return nil, errNoSuccess
 	}
 
-	return body, nil
+	entry := &store.StoreEntryType{}
+	err = json.Unmarshal(body, &entry)
+	if err != nil {
+		return nil, err
+	}
+
+	return entry, nil
+}
+
+func (api *API) StorePutValue(addr hash.Hash, key string, value string) error {
+	// Calc parentKey
+	keyHash := hash.New(addr.String() + key)
+	parentKey, _ := filepath.Split(key)
+	parentHash := hash.New(addr.String() + parentKey)
+
+	var parent interface{} = parentHash.String()
+	if key == "/" {
+		parent = nil
+	}
+
+	data, err := json.MarshalIndent(jsonOut{
+		"parent": parent,
+		"value":  []byte(value),
+	}, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	_, statusCode, err := api.Post(fmt.Sprintf("/account/%s/store/%s", addr.String(), keyHash.String()), data)
+	if err != nil {
+		return err
+	}
+
+	if statusCode < 200 || statusCode > 299 {
+		return errNoSuccess
+	}
+
+	return nil
+
 }

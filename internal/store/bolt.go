@@ -58,7 +58,7 @@ func NewBoltRepository(accountsPath string) Repository {
 // OpenDB will try and open the store database
 func (b boltRepo) OpenDb(account hash.Hash) error {
 	// Open file
-	p := filepath.Join(b.path, BoltDBFile)
+	p := filepath.Join(b.path, account.String()[:2], account.String()[2:], BoltDBFile)
 	logrus.Trace("opening boltdb file: ", p)
 
 	db, err := bolt.Open(p, 0600, nil)
@@ -161,7 +161,7 @@ func (b boltRepo) SetEntry(account, key hash.Hash, parent *hash.Hash, entry Stor
 	}
 
 	// Check if parent exists
-	if parent != nil && ! b.HasEntry(account, *parent) {
+	if parent != nil && !b.HasEntry(account, *parent) {
 		return errParentNotFound
 	}
 
@@ -176,7 +176,6 @@ func (b boltRepo) SetEntry(account, key hash.Hash, parent *hash.Hash, entry Stor
 	return client.Update(func(tx *bolt.Tx) error {
 		bucket, err := tx.CreateBucketIfNotExists([]byte(BucketName))
 		if err != nil {
-			logrus.Trace("unable to create bucket on BOLT: ", BucketName, err)
 			return err
 		}
 
