@@ -28,12 +28,12 @@ import (
 
 // EntryType is the structure that defines a key entry
 type EntryType struct {
-	Key            hash.Hash   `json:"key"`       // Key of the entry
-	Parent         *hash.Hash  `json:"parent"`    // key of the parent, or nil when it's the root
-	Data           []byte      `json:"data"`      // actual (encrypted) data
-	Timestamp      int64       `json:"timestamp"` // Timestamp of this entry, or the highest timestamp of any entry below
-	Entries        []hash.Hash `json:"entries"`   // Keys to entries below this
-	Signature      []byte      `json:"signature"` // Signature for this entry
+	Key       hash.Hash   `json:"key"`       // Key of the entry
+	Parent    *hash.Hash  `json:"parent"`    // key of the parent, or nil when it's the root
+	Data      []byte      `json:"data"`      // actual (encrypted) data
+	Timestamp int64       `json:"timestamp"` // Timestamp of this entry, or the highest timestamp of any entry below
+	Entries   []hash.Hash `json:"entries"`   // Keys to entries below this
+	Signature []byte      `json:"signature"` // Signature for this entry
 }
 
 // NewEntry creates a new entry

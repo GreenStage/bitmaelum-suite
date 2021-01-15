@@ -80,10 +80,10 @@ func (api *API) StorePutValue(kp bmcrypto.KeyPair, addr hash.Hash, key string, v
 	}
 
 	data, err := json.MarshalIndent(jsonOut{
-		"key": keyHash,
-		"parent": parent,
-		"value":  []byte(value),
-		"signature": sig,
+		"key":        keyHash,
+		"parent":     parent,
+		"value":      []byte(value),
+		"signature":  sig,
 		"public_key": kp.PubKey.String(),
 	}, "", "  ")
 	if err != nil {

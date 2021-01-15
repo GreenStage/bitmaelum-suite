@@ -54,4 +54,3 @@ func TestMarshalling(t *testing.T) {
 	assert.Equal(t, int64(1262349296), e2.Timestamp)
 
 }
-	

@@ -108,7 +108,7 @@ func StoreUpdate(w http.ResponseWriter, req *http.Request) {
 func checkSignature(pubKey bmcrypto.PubKey, keyHash hash.Hash, parentHash *hash.Hash, value []byte, signature []byte) bool {
 	sha := sha256.New()
 	sha.Write(keyHash.Byte())
-	if (parentHash != nil) {
+	if parentHash != nil {
 		sha.Write(parentHash.Byte())
 	}
 	sha.Write(value)
@@ -121,7 +121,6 @@ func checkSignature(pubKey bmcrypto.PubKey, keyHash hash.Hash, parentHash *hash.
 
 	return ok
 }
-
 
 // StoreDelete will remove a key or collection
 func StoreDelete(w http.ResponseWriter, req *http.Request) {
@@ -150,9 +149,9 @@ func storeKey(w http.ResponseWriter, addrHash, keyHash hash.Hash, parentHash *ha
 
 	// Add entry
 	entry := &store.EntryType{
-		Key: keyHash,
-		Parent: parentHash,
-		Data: value,
+		Key:       keyHash,
+		Parent:    parentHash,
+		Data:      value,
 		Signature: signature,
 	}
 	storesvc := container.Instance.GetStoreRepo()
