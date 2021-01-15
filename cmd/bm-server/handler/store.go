@@ -20,6 +20,7 @@
 package handler
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -27,6 +28,7 @@ import (
 	"github.com/bitmaelum/bitmaelum-suite/cmd/bm-server/internal/httputils"
 	"github.com/bitmaelum/bitmaelum-suite/internal/container"
 	"github.com/bitmaelum/bitmaelum-suite/internal/store"
+	"github.com/bitmaelum/bitmaelum-suite/pkg/bmcrypto"
 
 	"github.com/bitmaelum/bitmaelum-suite/pkg/hash"
 	"github.com/gorilla/mux"
@@ -66,8 +68,11 @@ func StoreGet(w http.ResponseWriter, req *http.Request) {
 
 // UpdateType is a request for a store entry
 type UpdateType struct {
-	Parent *hash.Hash `json:"parent"`
-	Value  []byte     `json:"value"`
+	Key       hash.Hash       `json:"key"`
+	Parent    *hash.Hash      `json:"parent"`
+	Value     []byte          `json:"value"`
+	Signature []byte          `json:"signature"`
+	PubKey    bmcrypto.PubKey `json:"public_key"`
 }
 
 // StoreUpdate will update a key or collection
@@ -91,8 +96,32 @@ func StoreUpdate(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	storeKey(w, *haddr, *keyHash, updateRequest.Parent, updateRequest.Value)
+	// Check if signature matches
+	if !checkSignature(updateRequest.PubKey, updateRequest.Key, updateRequest.Parent, updateRequest.Value, updateRequest.Signature) {
+		httputils.ErrorOut(w, http.StatusNotFound, errKeyNotFound.Error())
+		return
+	}
+
+	storeKey(w, *haddr, *keyHash, updateRequest.Parent, updateRequest.Value, updateRequest.Signature)
 }
+
+func checkSignature(pubKey bmcrypto.PubKey, keyHash hash.Hash, parentHash *hash.Hash, value []byte, signature []byte) bool {
+	sha := sha256.New()
+	sha.Write(keyHash.Byte())
+	if (parentHash != nil) {
+		sha.Write(parentHash.Byte())
+	}
+	sha.Write(value)
+	out := sha.Sum(nil)
+
+	ok, err := bmcrypto.Verify(pubKey, out, signature)
+	if err != nil {
+		return false
+	}
+
+	return ok
+}
+
 
 // StoreDelete will remove a key or collection
 func StoreDelete(w http.ResponseWriter, req *http.Request) {
@@ -111,7 +140,7 @@ func StoreDelete(w http.ResponseWriter, req *http.Request) {
 	deleteKey(w, *haddr, *keyHash)
 }
 
-func storeKey(w http.ResponseWriter, addrHash, keyHash hash.Hash, parentHash *hash.Hash, value []byte) {
+func storeKey(w http.ResponseWriter, addrHash, keyHash hash.Hash, parentHash *hash.Hash, value, signature []byte) {
 	err := openDb(w, addrHash)
 	if err != nil {
 		httputils.ErrorOut(w, http.StatusNotFound, errKeyNotFound.Error())
@@ -121,7 +150,10 @@ func storeKey(w http.ResponseWriter, addrHash, keyHash hash.Hash, parentHash *ha
 
 	// Add entry
 	entry := &store.EntryType{
+		Key: keyHash,
+		Parent: parentHash,
 		Data: value,
+		Signature: signature,
 	}
 	storesvc := container.Instance.GetStoreRepo()
 	err = storesvc.SetEntry(addrHash, keyHash, parentHash, *entry)

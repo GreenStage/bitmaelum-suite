@@ -55,7 +55,7 @@ var accountStorePutCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		err = client.StorePutValue(info.Address.Hash(), *aspKey, *aspValue)
+		err = client.StorePutValue(info.GetActiveKey().KeyPair, info.Address.Hash(), *aspKey, *aspValue)
 		if err != nil {
 			fmt.Println("error while setting store key")
 			os.Exit(1)

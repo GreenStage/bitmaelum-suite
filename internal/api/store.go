@@ -20,12 +20,14 @@
 package api
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
 
 	"github.com/bitmaelum/bitmaelum-suite/internal/store"
+	"github.com/bitmaelum/bitmaelum-suite/pkg/bmcrypto"
 	"github.com/bitmaelum/bitmaelum-suite/pkg/hash"
 )
 
@@ -52,7 +54,7 @@ func (api *API) StoreGetKey(addr hash.Hash, key string) (*store.EntryType, error
 }
 
 // StorePutValue will store an value to a key
-func (api *API) StorePutValue(addr hash.Hash, key string, value string) error {
+func (api *API) StorePutValue(kp bmcrypto.KeyPair, addr hash.Hash, key string, value string) error {
 	// Calc parentKey
 	parentKey, _ := filepath.Split(key)
 	// correct "/foo/" to "/foo" from "/foo/bar"
@@ -64,15 +66,25 @@ func (api *API) StorePutValue(addr hash.Hash, key string, value string) error {
 
 	keyHash := hash.New(addr.String() + key)
 	parentHash := hash.New(addr.String() + parentKey)
+	var ph *hash.Hash = &parentHash
 
 	var parent interface{} = parentHash.String()
 	if key == "/" {
 		parent = nil
+		ph = nil
+	}
+
+	sig, err := generateSignature(kp.PrivKey, keyHash, ph, value)
+	if err != nil {
+		return err
 	}
 
 	data, err := json.MarshalIndent(jsonOut{
+		"key": keyHash,
 		"parent": parent,
 		"value":  []byte(value),
+		"signature": sig,
+		"public_key": kp.PubKey.String(),
 	}, "", "  ")
 	if err != nil {
 		return err
@@ -88,5 +100,16 @@ func (api *API) StorePutValue(addr hash.Hash, key string, value string) error {
 	}
 
 	return nil
+}
 
+func generateSignature(privKey bmcrypto.PrivKey, keyHash hash.Hash, parentHash *hash.Hash, value string) ([]byte, error) {
+	sha := sha256.New()
+	sha.Write(keyHash.Byte())
+	if parentHash != nil {
+		sha.Write(parentHash.Byte())
+	}
+	sha.Write([]byte(value))
+	out := sha.Sum(nil)
+
+	return bmcrypto.Sign(privKey, out)
 }

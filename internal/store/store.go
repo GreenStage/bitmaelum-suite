@@ -33,7 +33,7 @@ type EntryType struct {
 	Data           []byte      `json:"data"`      // actual (encrypted) data
 	Timestamp      int64       `json:"timestamp"` // Timestamp of this entry, or the highest timestamp of any entry below
 	Entries        []hash.Hash `json:"entries"`   // Keys to entries below this
-	SubCollections []hash.Hash // TBD
+	Signature      []byte      `json:"signature"` // Signature for this entry
 }
 
 // NewEntry creates a new entry

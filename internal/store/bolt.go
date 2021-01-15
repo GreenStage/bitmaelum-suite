@@ -32,6 +32,7 @@ import (
 )
 
 var (
+	errKeyFieldMismatch       = errors.New("store: key field mismatch")
 	errKeyNotFound            = errors.New("store: key not found")
 	errParentNotFound         = errors.New("store: parent entry not found")
 	errCannotRemoveCollection = errors.New("store: cannot remove collection")
@@ -172,8 +173,10 @@ func (b boltRepo) SetEntry(account, key hash.Hash, parent *hash.Hash, entry Entr
 
 	// Update entry values
 	entry.Timestamp = lastUpdateTimestamp
-	entry.Key = key
-	entry.Parent = parent
+
+	if entry.Key != key || entry.Parent != parent {
+		return errKeyFieldMismatch
+	}
 
 	return client.Update(func(tx *bolt.Tx) error {
 		bucket, err := tx.CreateBucketIfNotExists([]byte(BucketName))
